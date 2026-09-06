@@ -7,6 +7,7 @@ import {
   useWaitForTransactionReceipt,
 } from 'wagmi';
 import { Panel, Field, inputClass, btnPrimary, Stat } from '@/components/Panel';
+import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
 import { addresses, hasAddress } from '@/config/addresses';
@@ -105,6 +106,10 @@ export default function AccretionPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Accretion"
+        subtitle="Sweep pending hook USDC, then harvest into constituents at launch weights — zero new shares."
+      />
       <Panel
         title="Accretion loop"
         subtitle="sweepFees splits pendingHookUsdc 50/50 treasury/engine (odd wei → engine). harvest buys at launch weights, worst-leg depositAccretion (zero new shares)."

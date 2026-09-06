@@ -9,6 +9,7 @@ import {
 } from 'wagmi';
 import { parseUnits } from 'viem';
 import { Panel, Field, inputClass, btnPrimary, Stat } from '@/components/Panel';
+import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
 import { addresses, hasAddress } from '@/config/addresses';
@@ -77,6 +78,10 @@ export default function RedeemPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Redeem"
+        subtitle="In-kind primary solvency path: share fee, burn, floor pro-rata constituents. No oracle or DEX."
+      />
       <Panel
         title="Redeem (in-kind)"
         subtitle="Primary solvency path: share fee to treasury, burn redeemShares, floor pro-rata constituents. No oracle/DEX."

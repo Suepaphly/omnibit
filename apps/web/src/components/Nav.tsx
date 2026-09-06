@@ -4,31 +4,22 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const links = [
-  { href: '/', label: 'Overview' },
-  { href: '/launch', label: 'Launch' },
-  { href: '/vault', label: 'Vault' },
-  { href: '/mint', label: 'Mint' },
-  { href: '/trade', label: 'Trade' },
-  { href: '/accretion', label: 'Accretion' },
-  { href: '/redeem', label: 'Redeem' },
-  { href: '/docs', label: 'Docs' },
+  { href: '/', label: 'Home', match: (p: string) => p === '/' },
+  { href: '/app', label: 'App', match: (p: string) => p === '/app' || p.startsWith('/app/') },
+  { href: '/docs', label: 'Docs', match: (p: string) => p === '/docs' || p.startsWith('/docs/') },
 ];
 
 export function Nav() {
   const pathname = usePathname();
   return (
-    <nav className="flex flex-wrap gap-1">
+    <nav className="flex flex-wrap items-center gap-1" aria-label="Primary">
       {links.map((l) => {
-        const active = pathname === l.href || (l.href !== '/' && pathname.startsWith(l.href));
+        const active = l.match(pathname);
         return (
           <Link
             key={l.href}
             href={l.href}
-            className={
-              active
-                ? 'rounded-md bg-accent/20 px-3 py-1.5 text-sm font-medium text-accent-soft'
-                : 'rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-canvas-raised hover:text-slate-200'
-            }
+            className={active ? 'nav-pill nav-pill-active' : 'nav-pill nav-pill-idle'}
           >
             {l.label}
           </Link>

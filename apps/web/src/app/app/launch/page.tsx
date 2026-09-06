@@ -9,6 +9,7 @@ import {
 } from 'wagmi';
 import { parseUnits, type Address } from 'viem';
 import { Panel, Field, inputClass, btnPrimary, btnSecondary, Stat } from '@/components/Panel';
+import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
 import { addresses } from '@/config/addresses';
@@ -131,6 +132,10 @@ export default function LaunchPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Launch"
+        subtitle="Two-transaction bootstrap: createSeed then initializeMarket — factory index, basket seed, hook register, V4 pool + LP."
+      />
       <Panel
         title="Launch (two-tx)"
         subtitle="Tx1 createSeed → factory.createIndex + basket buy + fee-free seed @ ~$1 NAV. Tx2 initializeMarket → hook register + V4 pool + full-range LP."

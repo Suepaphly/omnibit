@@ -23,11 +23,11 @@ export function TxGate({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-amber-100">
-        <p className="font-medium">Transactions disabled for {actionLabel}</p>
-        <p className="mt-1 text-amber-100/80">
+      <div className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-3 text-sm text-amber-100">
+        <p className="font-semibold text-accretion-soft">Transactions disabled for {actionLabel}</p>
+        <p className="mt-1.5 text-amber-100/80">
           Missing env address(es):{' '}
-          <code className="font-mono text-xs">
+          <code className="rounded bg-canvas/50 px-1 font-mono text-xs text-accretion-soft">
             {missing.map((k) => envKey(k)).join(', ')}
           </code>
           . Fill <code className="font-mono text-xs">.env.local</code> from{' '}

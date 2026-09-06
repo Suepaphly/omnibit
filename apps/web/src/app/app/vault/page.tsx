@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { useReadContract, useReadContracts } from 'wagmi';
 import { Panel, Stat } from '@/components/Panel';
+import { PageHeader } from '@/components/PageHeader';
 import { addresses, hasAddress } from '@/config/addresses';
 import { AccretiveIndexAbi, erc20Abi, IndexFactoryAbi } from '@/abi';
 import { fmtUnits, fmtUsdWad, shortAddr } from '@/lib/format';
@@ -92,6 +93,10 @@ export default function VaultPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Vault"
+        subtitle="Tracked vs raw balances, supply, and accretion display. Donations stay untracked; UsdWad is NAV display only."
+      />
       <Panel
         title="Vault"
         subtitle="Recognized trackedBalance vs raw ERC-20 balances. Donations are untracked. cumulativeAccretedUsdWad is display/NAV only — never redeem rights."

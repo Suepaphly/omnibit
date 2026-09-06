@@ -19,19 +19,25 @@ export function ConnectButton() {
         {wrongChain && (
           <button
             type="button"
-            className="rounded-md bg-warn/20 px-3 py-1.5 text-xs font-medium text-warn"
+            className="rounded-lg border border-warn/40 bg-warn/15 px-3 py-1.5 text-xs font-semibold text-warn transition hover:bg-warn/25"
             onClick={() => switchChain?.({ chainId: baseSepolia.id })}
           >
             Switch to Base Sepolia
           </button>
         )}
-        <span className="rounded-md border border-canvas-border bg-canvas-raised px-3 py-1.5 font-mono text-xs text-slate-300">
+        {!wrongChain && (
+          <span className="chain-badge hidden sm:inline-flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-ok" />
+            Sepolia
+          </span>
+        )}
+        <span className="rounded-lg border border-canvas-border bg-canvas/80 px-3 py-1.5 font-mono text-xs text-slate-200">
           {shortAddr(address)}
         </span>
         <button
           type="button"
           onClick={() => disconnect()}
-          className="rounded-md border border-canvas-border px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+          className="rounded-lg border border-canvas-border px-3 py-1.5 text-xs text-slate-400 transition hover:border-canvas-border-strong hover:text-slate-200"
         >
           Disconnect
         </button>
@@ -48,18 +54,18 @@ export function ConnectButton() {
             type="button"
             disabled={isPending}
             onClick={() => connect({ connector: c, chainId: baseSepolia.id })}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-muted disabled:opacity-50"
+            className="btn-primary !px-3 !py-1.5 !text-xs"
           >
             {c.name}
           </button>
         ))}
       </div>
       {!walletConnectConfigured && (
-        <p className="text-[10px] text-slate-500">
+        <p className="max-w-[14rem] text-right text-[10px] text-slate-500">
           WalletConnect disabled — set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
         </p>
       )}
-      {error && <p className="text-[10px] text-danger">{error.message}</p>}
+      {error && <p className="max-w-xs text-right text-[10px] text-danger">{error.message}</p>}
     </div>
   );
 }

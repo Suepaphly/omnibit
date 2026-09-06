@@ -9,6 +9,7 @@ import {
 } from 'wagmi';
 import { parseUnits, maxUint256, encodeAbiParameters, type Hex } from 'viem';
 import { Panel, Field, inputClass, btnPrimary, btnSecondary, Stat } from '@/components/Panel';
+import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
 import { addresses, hasAddress } from '@/config/addresses';
@@ -128,6 +129,10 @@ export default function TradePage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Trade"
+        subtitle="Exact-in AI2 ↔ USDC on the canonical V4 pool. LP fee and protocol hook fee shown separately."
+      />
       <Panel
         title="Trade — exact-in AI2 ↔ USDC"
         subtitle="Canonical INDEX/USDC pool: LP fee 5 bps (fee=500) stays with LPs; protocol hook takes 5 bps in USDC into pendingHookUsdc. Fees shown separately."

@@ -9,6 +9,7 @@ import {
 } from 'wagmi';
 import { parseUnits, maxUint256 } from 'viem';
 import { Panel, Field, inputClass, btnPrimary, btnSecondary, Stat } from '@/components/Panel';
+import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
 import { addresses, hasAddress } from '@/config/addresses';
@@ -119,6 +120,10 @@ export default function MintPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Mint"
+        subtitle="In-kind mintExactShares or USDC zap. Preview ceil pro-rata basket and 10 bps share fee before sending."
+      />
       <Panel
         title="Mint"
         subtitle="In-kind mintExactShares pulls ceil pro-rata basket. Zap path buys constituents with USDC then mints. 10 bps share fee to treasury."
