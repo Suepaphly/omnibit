@@ -9,7 +9,7 @@
 | Factory `DEFAULT_ADMIN_ROLE` | Set launcher / treasury / swapAdapter; grant guardian |
 | Factory `GUARDIAN_ROLE` | `approveAsset` / `setPriceFeed` / `revokeAsset` |
 | `launcher` | `createIndex` (factory); one-shot `seed` (vault) |
-| `accretionEngine` | `depositAccretion` (increases tracked, no mint) |
+| `accretionEngine` | `depositAccretion(amounts, usdWadIncrement)` (increases tracked + UsdWad, no mint) |
 | `protocolTreasury` | Receives fee shares; can redeem like any holder |
 | Public | `mintExactShares`, `redeem`, `syncLoss`, `harvest`, ERC-20 transfers |
 | Anyone | Can donate tokens; donations are **not** tracked |
@@ -57,6 +57,11 @@ Vault role addresses are fixed at `initialize` (no setters on AccretiveIndex).
 - Hook / sweep economic attacks (hook not implemented)
 - Clone init front-running if a non-factory deployer clones without atomic init
 
+## UsdWad trust
+
+Engine-computed `usdWadIncrement` is trusted display accounting. A compromised engine could inflate
+`cumulativeAccretedUsdWad` without changing redeemable basket (tracked still requires real tokens).
+
 ## What this audit surface still excludes
 
-Launcher, ZapRouter, production UniswapV4SwapAdapter, IndexFeeHook, SqrtPriceLib, Sepolia integration scripts.
+Sepolia live B20 / V4 broadcast verification, production PositionManager calldata, frontend.

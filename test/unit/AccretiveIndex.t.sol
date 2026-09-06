@@ -544,7 +544,7 @@ contract AccretiveIndexTest is Test {
         vm.startPrank(engine);
         tNVDA.approve(address(index), amounts[0]);
         tMSFT.approve(address(index), amounts[1]);
-        index.depositAccretion(amounts);
+        index.depositAccretion(amounts, 0);
         vm.stopPrank();
 
         assertEq(index.totalSupply(), supplyBefore);
@@ -552,12 +552,32 @@ contract AccretiveIndexTest is Test {
         assertEq(index.trackedBalance(address(tMSFT)), 1.0e18 + 0.2e18);
         assertEq(index.cumulativeAccretedRaw(address(tNVDA)), 0.5e18);
         assertEq(index.cumulativeAccretedRaw(address(tMSFT)), 0.2e18);
-        assertEq(index.cumulativeAccretedUsdWad(), 0); // unimplemented oracle update
+        assertEq(index.cumulativeAccretedUsdWad(), 0); // direct deposit with usdWadIncrement=0
         _assertTrackedLeRaw();
 
         // Backing per share rose
         // Before: 2.5e18/1000e18 = 0.0025; after: 3.0e18/1000e18 = 0.003
         assertEq(Math.mulDiv(index.trackedBalance(address(tNVDA)), 1e18, index.totalSupply()), 0.003e18);
+    }
+
+    function test_depositAccretion_usdWadIncrement_increasesAndSupplyFlat() public {
+        _seedDefault();
+        uint256 supplyBefore = index.totalSupply();
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 0.25e18;
+        amounts[1] = 0.1e18;
+        uint256 usdWad = 100e18; // engine-computed NavLib value in production
+
+        tNVDA.mint(engine, amounts[0]);
+        tMSFT.mint(engine, amounts[1]);
+        vm.startPrank(engine);
+        tNVDA.approve(address(index), amounts[0]);
+        tMSFT.approve(address(index), amounts[1]);
+        index.depositAccretion(amounts, usdWad);
+        vm.stopPrank();
+
+        assertEq(index.totalSupply(), supplyBefore);
+        assertEq(index.cumulativeAccretedUsdWad(), usdWad);
     }
 
     function test_depositAccretionOnlyEngine() public {
@@ -567,14 +587,14 @@ contract AccretiveIndexTest is Test {
         amounts[1] = 1;
         vm.prank(alice);
         vm.expectRevert(AccretiveIndex.OnlyAccretionEngine.selector);
-        index.depositAccretion(amounts);
+        index.depositAccretion(amounts, 0);
     }
 
     function test_depositAccretionNotSeeded() public {
         uint256[] memory amounts = new uint256[](2);
         vm.prank(engine);
         vm.expectRevert(AccretiveIndex.NotSeeded.selector);
-        index.depositAccretion(amounts);
+        index.depositAccretion(amounts, 0);
     }
 
     function test_depositAccretionLengthMismatch() public {
@@ -583,7 +603,7 @@ contract AccretiveIndexTest is Test {
         amounts[0] = 1;
         vm.prank(engine);
         vm.expectRevert(AccretiveIndex.LengthMismatch.selector);
-        index.depositAccretion(amounts);
+        index.depositAccretion(amounts, 0);
     }
 
     // =========================================================================
@@ -679,7 +699,7 @@ contract AccretiveIndexTest is Test {
         vm.startPrank(engine);
         tNVDA.approve(address(index), type(uint256).max);
         tMSFT.approve(address(index), type(uint256).max);
-        index.depositAccretion(amounts);
+        index.depositAccretion(amounts, 0);
         vm.stopPrank();
 
         (uint256[] memory outAfter,,) = index.previewRedeem(shares);

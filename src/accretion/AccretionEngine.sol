@@ -8,7 +8,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {AccretiveIndex} from "../core/AccretiveIndex.sol";
+import {IndexFactory} from "../core/IndexFactory.sol";
 import {IUniswapV4SwapAdapter} from "../periphery/interfaces/IUniswapV4SwapAdapter.sol";
+import {NavLib} from "../libs/NavLib.sol";
+import {AggregatorV3Interface} from "../testnet/MockPriceFeed.sol";
 
 /**
  * @title AccretionEngine
@@ -17,8 +20,9 @@ import {IUniswapV4SwapAdapter} from "../periphery/interfaces/IUniswapV4SwapAdapt
  *
  * @dev Harvest spend uses fixed `launchWeightsBps` (e.g. 50/50), NOT live value-weights.
  *      Leftover constituent tokens and leftover USDC remain in this engine.
- *      Full ZapRouter / production UniswapV4SwapAdapter wiring is out of this phase —
- *      harvest calls IUniswapV4SwapAdapter.swapExactInput (mockable in unit tests).
+ *      On successful recognition, engine prices `recognized` via factory feeds + NavLib and
+ *      passes usdWadIncrement into depositAccretion (display only; does not invent a fee path).
+ *      Assumption: non-positive / missing feeds revert harvest (stale feeds MAY block harvest per spec).
  */
 contract AccretionEngine is Initializable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -41,6 +45,7 @@ contract AccretionEngine is Initializable, ReentrancyGuard {
     error DeadlineExpired();
     error NoUsdc();
     error NothingRecognized();
+    error MissingPriceFeed(address asset);
 
     event Harvested(
         address indexed caller, uint256 usdcSpent, uint256[] bought, uint256[] recognized, uint256 usdcRemaining
@@ -147,7 +152,8 @@ contract AccretionEngine is Initializable, ReentrancyGuard {
                 IERC20(cons[i]).forceApprove(address(index), recognized[i]);
             }
         }
-        index.depositAccretion(recognized);
+        uint256 usdWad = _usdWadForAmounts(cons, recognized);
+        index.depositAccretion(recognized, usdWad);
         for (uint256 i = 0; i < n; ++i) {
             if (recognized[i] > 0) {
                 IERC20(cons[i]).forceApprove(address(index), 0);
@@ -155,6 +161,24 @@ contract AccretionEngine is Initializable, ReentrancyGuard {
         }
 
         emit Harvested(msg.sender, usdcAllocated, bought, recognized, usdc.balanceOf(address(this)));
+    }
+
+    /**
+     * @dev Sum NavLib.usdValueWad over recognized legs using IndexFactory price feeds (8-dec answers).
+     *      Constituent amount decimals are 18 (INDEX constituents). Missing/non-positive feed reverts.
+     */
+    function _usdWadForAmounts(address[] memory cons, uint256[] memory amounts) internal view returns (uint256 usdWad) {
+        uint256 n = cons.length;
+        int256[] memory answers = new int256[](n);
+        IndexFactory fac = IndexFactory(factory);
+        for (uint256 i = 0; i < n; ++i) {
+            address feed = fac.priceFeedOf(cons[i]);
+            if (feed == address(0)) revert MissingPriceFeed(cons[i]);
+            (, int256 answer,,,) = AggregatorV3Interface(feed).latestRoundData();
+            answers[i] = answer;
+        }
+        // amountDecimals=18, feedDecimals=8 — matches MockPriceFeed / spec §5
+        return NavLib.navWad(amounts, 18, answers, 8);
     }
 
     /**

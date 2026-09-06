@@ -10,6 +10,7 @@ import {AccretionEngine} from "../../src/accretion/AccretionEngine.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockPriceFeed} from "../../src/testnet/MockPriceFeed.sol";
 import {MockSwapAdapter} from "../mocks/MockSwapAdapter.sol";
+import {NavLib} from "../../src/libs/NavLib.sol";
 
 contract AccretionEngineTest is Test {
     using Math for uint256;
@@ -166,5 +167,27 @@ contract AccretionEngineTest is Test {
         vm.prank(makeAddr("anyone"));
         engine.harvest(minOut, block.timestamp + 1);
         assertEq(index.totalSupply(), 1000e18);
+    }
+
+    function test_harvest_increasesCumulativeAccretedUsdWad_supplyFlat() public {
+        usdc.mint(address(engine), 100e6);
+
+        uint256 supplyBefore = index.totalSupply();
+        uint256 usdBefore = index.cumulativeAccretedUsdWad();
+
+        uint256[] memory minOut = new uint256[](2);
+        vm.prank(keeper);
+        uint256[] memory recognized = engine.harvest(minOut, block.timestamp + 1);
+
+        // Ideal: 0.25 tNVDA @ $200 + 0.1 tMSFT @ $500 = $50 + $50 = $100 = 100e18 WAD
+        int256[] memory answers = new int256[](2);
+        answers[0] = 200_00000000;
+        answers[1] = 500_00000000;
+        uint256 expectedUsd = NavLib.navWad(recognized, 18, answers, 8);
+        assertEq(expectedUsd, 100e18);
+
+        assertEq(index.totalSupply(), supplyBefore, "supply must stay flat");
+        assertEq(index.cumulativeAccretedUsdWad(), usdBefore + expectedUsd);
+        assertGt(index.cumulativeAccretedUsdWad(), 0);
     }
 }

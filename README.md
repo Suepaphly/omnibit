@@ -1,105 +1,106 @@
-# Omnibit Index Forge — AccretiveIndex + Factory + AccretionEngine
+# Omnibit Index Forge — Base Sepolia MVP
 
-Solidity `^0.8.26` Foundry project for Omnibit Index Forge (Base Sepolia MVP).
+Solidity `^0.8.26` Foundry project for **Omnibit Index Forge** (Base Batches 004).
 
-> **This phase:** `AccretiveIndex`, `IndexFactory`, `AccretionEngine`, `NavLib`, `MockPriceFeed`, and `IUniswapV4SwapAdapter` (+ test mock).
-> **Not yet:** `IndexLauncher`, `IndexZapRouter`, production `UniswapV4SwapAdapter`, `IndexFeeHook`, `SqrtPriceLib`.
+> **Local MVP status:** vault / factory / engine / zap / V4 adapter / IndexFeeHook / IndexLauncher + scripts + local integration loop.  
+> **Testnet disclaimer:** tNVDA and tMSFT are **synthetic B20 test assets**. They are **not** Coinbase-issued live tokenized stocks.
+
+## Chain — Base Sepolia (84532)
+
+| Dependency | Address |
+|------------|---------|
+| Chain id | `84532` |
+| B20 Factory | `0xB20f000000000000000000000000000000000000` |
+| Circle test USDC (6 dec) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+| Uniswap V4 PoolManager | `0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408` |
+| Uniswap V4 Universal Router | `0x492e6456d9528771018deb9e87ef7750ef184104` |
+| Uniswap V4 PositionManager | `0x4b2c77d209d3405f41a037ec6c77f7f5b8e2ca80` |
+| Uniswap V4 StateView | `0x571291b572ed32ce6751a2cb2486ebee8defb9b4` |
+| Uniswap V4 Quoter | `0x4a6513c898fe1b2d0e78d3b0e0a4a151589b1cba` |
+| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
+
+Protocol addresses (factory, hook, launcher, AI2, feeds) are published after Sepolia broadcast — see `script/DeployProtocol.s.sol` output.
 
 ## Product model
 
-Each factory-created index is a pair:
+1. **AccretiveIndex** — ERC-20 share (18 dec) + custody + `trackedBalance`
+2. **AccretionEngine** — swept USDC → harvest at **launch weights** → `depositAccretion` (**zero new shares**)
 
-1. **AccretiveIndex** — ERC-20 share (18 dec) + custody vault + `trackedBalance` ledger
-2. **AccretionEngine** — holds swept USDC; `harvest` buys at **launch weights** and `depositAccretion`s with **zero new shares**
+**Invariant:** `backing per share[i] = trackedBalance[i] / totalSupply`.  
+**Accretion** raises backing/share; `totalSupply` unchanged.  
+**`cumulativeAccretedUsdWad`:** engine prices recognized amounts via factory feeds + `NavLib` and passes `usdWadIncrement` into `depositAccretion` (UI/NAV only — never redeem rights).
 
-**Key invariant:** `backing per share[i] = trackedBalance[i] / totalSupply`.
+## Fees
 
-**Accretion** increases tracked without minting → backing/share rises, `totalSupply` unchanged.
+| Path | Fee | Paid in | Destination |
+|------|-----|---------|-------------|
+| Canonical INDEX/USDC swap | 5 bps protocol hook | USDC | `pendingHookUsdc` → sweep 50/50 treasury/engine (odd wei → engine) |
+| Same swap LP cut | 5 bps (`fee=500`) | pool units | Stays with LPs |
+| Mint / redeem | 10 bps | INDEX shares | protocolTreasury |
+| `seed()` | 0 | — | Launcher-only |
 
-## Tracked vs raw
-
-| Concept | Meaning |
-|--------|---------|
-| **Raw balance** | `IERC20(asset).balanceOf(vault)` |
-| **Recognized backing (`trackedBalance`)** | Protocol ledger for mint/redeem/accretion |
-
-Direct ERC-20 donations do **not** become backing. Writers: `seed`, `mintExactShares`, `redeem`, `depositAccretion`, `syncLoss` (decrease only).
-
-## IndexFactory
-
-- OZ `Clones` of index + engine implementations
-- `createIndex(CreateIndexParams)` — **onlyLauncher**; N ∈ [2,8]; equal-length arrays; no dups; every constituent **approved**; weights sum to 10_000
-- Initializes both clones: fees 10/10 bps, factory/launcher/engine/treasury wiring, launch weights on engine
-- Registry: `isIndex`, `isEngine`, `engineOf`, `indexes()`
-- Guardian-only: `approveAsset` / `setPriceFeed` / `revokeAsset`
-- **FoT policy:** fee-on-transfer assets are rejected at **registry policy** (guardian MUST NOT approve FoT). No on-chain FoT probe in MVP.
-
-## AccretionEngine
-
-- Clone-ready `Initializable`; constructor `_disableInitializers`
-- Holds USDC; linked to one index; stores `launchWeightsBps`
-- `harvest(minOut[], deadline)` — permissionless:
-  1. Split engine USDC by launch weights
-  2. Buy each leg via `IUniswapV4SwapAdapter.swapExactInput`
-  3. Worst-leg recognize vs current `tracked` proportions
-  4. `depositAccretion(recognized)` — **must mint zero shares**; leftovers stay in engine
-
-## NavLib / MockPriceFeed
-
-- `NavLib`: WAD NAV helpers from tracked amounts + 8-dec feed answers
-- `MockPriceFeed`: AggregatorV3-compatible mock (`decimals = 8`)
-
-## Fees & rounding (vault)
-
-- Mint/redeem fees in **index shares** to `protocolTreasury` (never USDC)
-- Mint required: **Ceil**; redeem out: **Floor**
-- Hook fee / sweep path is **not** in this phase
-
-## Security assumptions
-
-- Constituents: standard ERC-20, **no FoT** (enforced by factory guardian policy)
-- Roles trusted as configured at init / factory admin
-- `mintPaused` / `closed` still storage-reserved on the vault (no setters here)
-- **UNAUDITED**
-
-## NOT implemented (remaining MVP gaps)
-
-| Component | Status |
-|-----------|--------|
-| `IndexLauncher` (createSeed + initializeMarket) | Not started |
-| `IndexZapRouter` | Not started |
-| Production `UniswapV4SwapAdapter` | Interface + test mock only |
-| `IndexFeeHook` + CREATE2 mine | Not started |
-| `SqrtPriceLib` | Not started |
-| Sepolia B20 / V4 integration scripts | Not started |
-| Oracle write to `cumulativeAccretedUsdWad` | Reserved / unused |
-
-## Layout
-
-```
-src/core/AccretiveIndex.sol IndexFactory.sol
-src/accretion/AccretionEngine.sol
-src/libs/NavLib.sol
-src/testnet/MockPriceFeed.sol
-src/periphery/interfaces/IUniswapV4SwapAdapter.sol
-test/unit/ … Factory / Engine / NavLib / AccretiveIndex
-test/mocks/MockERC20.sol MockSwapAdapter.sol
-docs/{ARCHITECTURE,ACCOUNTING,SECURITY,GLOSSARY}.md
-```
-
-## Build & test
+## Build & test (local)
 
 ```bash
 export PATH="$PATH:/home/box/.foundry/bin"
 cd /workspace/omnibit
 forge fmt
 forge build
-forge test -vvv
+forge test
 ```
+
+Optional verbosity: `forge test -vvv`. Integration: `forge test --match-path test/integration/OmnibitLoop.t.sol -vv`.
+
+## Scripts (`script/`)
+
+| Script | Purpose |
+|--------|---------|
+| `DeployMockFeeds.s.sol` | MockPriceFeed tNVDA=$200, tMSFT=$500 |
+| `DeployProtocol.s.sol` | Impls, factory, adapter, zap, mined hook, launcher; wire roles |
+| `LaunchAI2.s.sol` | createSeed + initializeMarket placeholders (env comments) |
+| `DemoAccretion.s.sol` | sweep → harvest → redeem narrative |
+| `DeployTestB20s.s.sol` | **Stub** — live B20 Factory only |
+| `SeedConstituentPools.s.sol` | **Stub** — live V4 PoolManager/PositionManager |
+
+Scripts **compile** locally. **`--broadcast` is Sepolia-only** (needs keys + live B20/V4). Do not imply anvil hosts B20 precompiles.
+
+### Remaining Sepolia broadcast steps
+
+1. Create tNVDA / tMSFT via B20 Factory (`DeployTestB20s` stub).
+2. Deploy mock feeds; guardian `approveAsset`.
+3. Seed tNVDA/USDC + tMSFT/USDC V4 pools; `adapter.registerPool`.
+4. `DeployProtocol` with `--broadcast` on 84532 (mine hook via CREATE2 deployer).
+5. `LaunchAI2` two txs; trade to accrue hook USDC.
+6. `DemoAccretion`: sweep → harvest → redeem more basket per share.
+7. Publish addresses; frontend against Sepolia.
+
+## Layout
+
+```
+src/core/          AccretiveIndex.sol  IndexFactory.sol
+src/accretion/     AccretionEngine.sol
+src/launch/        IndexLauncher.sol
+src/periphery/     IndexZapRouter.sol  UniswapV4SwapAdapter.sol
+src/fees/          IndexFeeHook.sol
+src/libs/          NavLib.sol  SqrtPriceLib.sol  HookMiner.sol
+src/testnet/       MockPriceFeed.sol
+test/unit|fuzz|invariant|integration/
+test/harness/      LocalPoolManager.sol  LocalPositionManager.sol
+script/            Deploy* LaunchAI2 DemoAccretion
+docs/              ARCHITECTURE ACCOUNTING SECURITY GLOSSARY
+```
+
+## Security assumptions
+
+- Constituents: standard ERC-20, **no FoT** (factory guardian policy)
+- Adapter allowlist: Zap + `factory.isEngine`; registered constituent/USDC pools only
+- Hook MUST be CREATE2/`HookMiner` mined
+- **UNAUDITED** — testnet only
 
 ## Dependencies
 
-- OpenZeppelin Contracts + Upgradeable (Clones, Initializable ERC20, AccessControl, ReentrancyGuard, SafeERC20, Math)
+- OpenZeppelin Contracts + Upgradeable
+- Uniswap v4-core (+ periphery for HookMiner reference)
 - forge-std
 
 ## License

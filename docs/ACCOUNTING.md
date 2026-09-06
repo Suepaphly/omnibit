@@ -79,8 +79,9 @@ assetOut = floor(1000 * 2 / 3) = 666
 ## Accretion
 
 ```
-tracked[i]              += amounts[i]
+tracked[i]               += amounts[i]
 cumulativeAccretedRaw[i] += amounts[i]
+cumulativeAccretedUsdWad += usdWadIncrement   // engine-supplied NavLib value
 totalSupply unchanged
 ```
 
@@ -90,7 +91,12 @@ Before accretion: `bps = T / S`. After depositing `A` with no mint: `bps' = (T+A
 
 Redeemers later receive floor-pro-rata of the **larger** tracked pile.
 
-`cumulativeAccretedUsdWad` is reserved for oracle-priced USD accrual for UI; **this core never writes it**.
+### cumulativeAccretedUsdWad
+
+On harvest success the engine computes `NavLib.navWad(recognized, 18, feedAnswers, 8)` from
+`IndexFactory.priceFeedOf` and passes it as `usdWadIncrement` to `depositAccretion`.  
+**Display / frontend NAV only.** Does not affect in-kind redeem math. Missing/non-positive feeds
+revert in the engine before deposit (no silent under-count).
 
 ## Why share fees stay backed
 

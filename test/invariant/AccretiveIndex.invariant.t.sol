@@ -96,7 +96,7 @@ contract AccretiveIndexHandler is Test {
         a.approve(address(index), amtA);
         b.approve(address(index), amtB);
         uint256 supplyBefore = index.totalSupply();
-        try index.depositAccretion(amounts) {
+        try index.depositAccretion(amounts, 0) {
             ghostAccretionCalls += 1;
             require(index.totalSupply() == supplyBefore, "accretion minted");
         } catch {}
@@ -196,7 +196,9 @@ contract AccretiveIndexInvariantTest is StdInvariant, Test {
         assertLe(index.trackedBalance(address(b)), b.balanceOf(address(index)));
     }
 
-    function invariant_cumulativeUsdWadUntouched() public view {
+    /// @dev Handler deposits with usdWadIncrement=0 (no factory feeds in this harness).
+    ///      Harvest-path UsdWad updates are covered in AccretionEngine unit + integration tests.
+    function invariant_cumulativeUsdWadNonNegativeWhenHandlerPassesZero() public view {
         assertEq(index.cumulativeAccretedUsdWad(), 0);
     }
 }

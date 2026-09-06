@@ -20,8 +20,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
  *      Fee-on-transfer / rebasing / blacklisting constituents are unsupported. Upstream registry
  *      (IndexFactory) is assumed to approve only standard ERC-20s with no transfer tax.
  *
- *      cumulativeAccretedUsdWad is reserved for a future oracle-priced accrual update; this core
- *      leaves that update unimplemented (storage exists, never written here).
+ *      cumulativeAccretedUsdWad: engine passes NavLib USD-WAD of newly recognized amounts on
+ *      depositAccretion (factory feeds). Display/NAV only — never affects redeem rights.
+ *      Assumption: accretionEngine is trusted; stale/non-positive feeds revert in the engine before deposit.
  *
  *      mintPaused / closed are storage-reserved for a later factory/guardian; this contract has
  *      no setters for them. mintExactShares reverts when mintPaused is true.
@@ -37,7 +38,7 @@ contract AccretiveIndex is Initializable, ERC20Upgradeable, ReentrancyGuard {
     address[] internal _constituents;
     mapping(address => uint256) public trackedBalance;
     mapping(address => uint256) public cumulativeAccretedRaw;
-    /// @dev Reserved: USD-WAD accrual for UI / NAV display. Not updated by this core (no oracle).
+    /// @dev Lifetime USD-WAD of recognized accretion (UI/NAV). Updated only via depositAccretion usdWadIncrement.
     uint256 public cumulativeAccretedUsdWad;
 
     address public factory;
@@ -97,7 +98,7 @@ contract AccretiveIndex is Initializable, ERC20Upgradeable, ReentrancyGuard {
         uint256 feeShares,
         uint256[] assetOut
     );
-    event AccretionDeposited(address indexed engine, uint256[] amounts);
+    event AccretionDeposited(address indexed engine, uint256[] amounts, uint256 usdWadIncrement);
     event LossSynced(address indexed asset, uint256 previousTracked, uint256 newTracked);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -315,9 +316,11 @@ contract AccretiveIndex is Initializable, ERC20Upgradeable, ReentrancyGuard {
 
     /**
      * @notice AccretionEngine-only: pull constituents, increase tracked + cumulativeAccretedRaw, NEVER mint.
-     * @dev cumulativeAccretedUsdWad is intentionally not updated here (no oracle in this core).
+     * @param amounts Per-constituent raw amounts to recognize (worst-leg basket from harvest).
+     * @param usdWadIncrement NavLib USD-WAD of `amounts` at current factory feeds (0 allowed for tests).
+     * @dev cumulativeAccretedUsdWad += usdWadIncrement. Does not read oracles here — engine computes.
      */
-    function depositAccretion(uint256[] calldata amounts) external nonReentrant {
+    function depositAccretion(uint256[] calldata amounts, uint256 usdWadIncrement) external nonReentrant {
         if (msg.sender != accretionEngine) revert OnlyAccretionEngine();
         if (!seeded) revert NotSeeded();
 
@@ -335,7 +338,11 @@ contract AccretiveIndex is Initializable, ERC20Upgradeable, ReentrancyGuard {
             _assertTrackedLeRaw(asset);
         }
 
-        emit AccretionDeposited(msg.sender, amounts);
+        if (usdWadIncrement > 0) {
+            cumulativeAccretedUsdWad += usdWadIncrement;
+        }
+
+        emit AccretionDeposited(msg.sender, amounts, usdWadIncrement);
     }
 
     // -------------------------------------------------------------------------

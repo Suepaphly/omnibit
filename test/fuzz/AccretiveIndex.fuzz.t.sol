@@ -110,7 +110,7 @@ contract AccretiveIndexFuzzTest is Test {
         vm.startPrank(engine);
         a.approve(address(index), accA);
         b.approve(address(index), accB);
-        index.depositAccretion(amounts);
+        index.depositAccretion(amounts, 0);
         vm.stopPrank();
 
         assertEq(index.totalSupply(), supplyBefore);

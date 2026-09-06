@@ -1,14 +1,14 @@
 # Glossary (Omnibit-specific)
 
 - **Accretion** — Depositing constituent tokens into an AccretiveIndex vault as recognized backing **without minting** new index shares, raising backing per share.
-- **AccretionEngine** — Per-index contract (not in this repo) that spends swept USDC at launch weights, buys constituents, and calls `depositAccretion`.
+- **AccretionEngine** — Per-index clone that spends swept USDC at launch weights, buys constituents, prices recognized amounts via factory feeds + NavLib, and calls `depositAccretion`.
 - **AccretiveIndex** — Cloneable ERC-20 index share + custody vault + recognized-backing ledger.
 - **Backing** — Constituent amounts recognized in `trackedBalance` that back index shares.
 - **Backing per share** — `trackedBalance[i] / totalSupply` for each constituent `i`.
 - **B20** — Base Native Token Standard assets; MVP uses synthetic test B20s (tNVDA, tMSFT).
 - **Constituent** — An approved ERC-20 in the index basket (2–8 unique nonzero addresses).
 - **cumulativeAccretedRaw** — Lifetime raw constituent units recognized via `depositAccretion` per asset.
-- **cumulativeAccretedUsdWad** — Reserved USD-WAD lifetime accretion metric for UI/NAV; **not updated** in this core.
+- **cumulativeAccretedUsdWad** — Lifetime USD-WAD of recognized accretion for UI/NAV; updated when the engine passes `usdWadIncrement` on `depositAccretion`.
 - **Gross shares** — Full share amount requested on mint/seed before fee split (`userShares + feeShares` on mint).
 - **Index AI2** — Reference MVP index: 50% tNVDA / 50% tMSFT at launch weights.
 - **Index share** — The ERC-20 (`AI2`) representing a pro-rata claim on tracked constituents.
