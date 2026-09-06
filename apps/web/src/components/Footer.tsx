@@ -23,6 +23,9 @@ export function Footer() {
           <Link href="/docs/runbook" className="text-slate-400 transition hover:text-accent-soft">
             Runbook
           </Link>
+          <Link href="/docs/sepolia-launch" className="text-slate-400 transition hover:text-accent-soft">
+            Sepolia launch
+          </Link>
           <Link href="/docs/security" className="text-slate-400 transition hover:text-accent-soft">
             Security
           </Link>

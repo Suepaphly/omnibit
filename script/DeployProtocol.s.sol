@@ -13,7 +13,8 @@ import {IndexFeeHook} from "../src/fees/IndexFeeHook.sol";
 import {IndexLauncher} from "../src/launch/IndexLauncher.sol";
 import {HookMiner} from "../src/libs/HookMiner.sol";
 import {IPoolManagerMinimal} from "../src/periphery/interfaces/IPoolManagerMinimal.sol";
-import {IPositionManagerMinimal} from "../src/periphery/interfaces/IPositionManagerMinimal.sol";
+import {ILiquidityMinter} from "../src/periphery/interfaces/ILiquidityMinter.sol";
+import {V4PositionMinter} from "../src/periphery/minter/V4PositionMinter.sol";
 
 /**
  * @title DeployProtocol
@@ -25,11 +26,15 @@ import {IPositionManagerMinimal} from "../src/periphery/interfaces/IPositionMana
  *        PoolManager      0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408
  *        PositionManager  0x4B2C77d209D3405F41a037Ec6c77F7F5b8e2ca80
  *        CREATE2 deployer 0x4e59b44847b379578588920cA78FbF26c0B4956C
+ *
+ *      DeployProtocol deploys V4PositionMinter(PositionManager, Permit2, PoolManager) and passes that
+ *      ILiquidityMinter to IndexLauncher — do not pass the raw PositionManager address.
  */
 contract DeployProtocol is Script {
     address constant USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
     address constant POOL_MANAGER = 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408;
     address constant POSITION_MANAGER = 0x4B2C77d209D3405F41a037Ec6c77F7F5b8e2ca80;
+    address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     function run() external {
@@ -86,6 +91,8 @@ contract DeployProtocol is Script {
     }
 
     function _deployLauncher(address factory, address zap, address hook, address admin) internal returns (address) {
+        address minter = address(new V4PositionMinter(POSITION_MANAGER, PERMIT2, POOL_MANAGER));
+        console2.log("v4PositionMinter", minter);
         return address(
             new IndexLauncher(
                 IndexFactory(factory),
@@ -93,7 +100,7 @@ contract DeployProtocol is Script {
                 IndexZapRouter(zap),
                 IndexFeeHook(hook),
                 IPoolManagerMinimal(POOL_MANAGER),
-                IPositionManagerMinimal(POSITION_MANAGER),
+                ILiquidityMinter(minter),
                 admin
             )
         );

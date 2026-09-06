@@ -64,6 +64,10 @@ Optional verbosity: `forge test -vvv`. Integration: `forge test --match-path tes
 
 Scripts **compile** locally. **`--broadcast` is Sepolia-only** (needs keys + live B20/V4). Do not imply anvil hosts B20 precompiles.
 
+### Sepolia launch guide
+
+Step-by-step wallet / deploy / `NEXT_PUBLIC_*` / smoke-test checklist: **[`docs/SEPOLIA_LAUNCH.md`](docs/SEPOLIA_LAUNCH.md)** (also in the web docs UI at `/docs/sepolia-launch` after `copy-docs`).
+
 ### Remaining Sepolia broadcast steps
 
 1. Create tNVDA / tMSFT via B20 Factory (`DeployTestB20s` stub).

@@ -18,6 +18,7 @@ const files = [
   ['GLOSSARY.md', path.join(docsDir, 'GLOSSARY.md')],
   ['README.md', path.join(repoRoot, 'README.md')],
   ['RUNBOOK.md', path.join(docsDir, 'RUNBOOK.md')],
+  ['SEPOLIA_LAUNCH.md', path.join(docsDir, 'SEPOLIA_LAUNCH.md')],
 ];
 
 for (const [name, src] of files) {

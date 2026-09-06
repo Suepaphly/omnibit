@@ -16,7 +16,7 @@ import {AccretiveIndex} from "../core/AccretiveIndex.sol";
 import {IndexZapRouter} from "../periphery/IndexZapRouter.sol";
 import {IndexFeeHook} from "../fees/IndexFeeHook.sol";
 import {IPoolManagerMinimal} from "../periphery/interfaces/IPoolManagerMinimal.sol";
-import {IPositionManagerMinimal} from "../periphery/interfaces/IPositionManagerMinimal.sol";
+import {ILiquidityMinter} from "../periphery/interfaces/ILiquidityMinter.sol";
 import {SqrtPriceLib} from "../libs/SqrtPriceLib.sol";
 import {NavLib} from "../libs/NavLib.sol";
 import {AggregatorV3Interface} from "../testnet/MockPriceFeed.sol";
@@ -30,6 +30,8 @@ import {AggregatorV3Interface} from "../testnet/MockPriceFeed.sol";
  *      full-range LP via PositionManager; NFT to creator.
  *
  *      Hook registration + PoolManager.initialize stay launcher-owned.
+ *      Liquidity seeding goes through ILiquidityMinter (LocalPositionManager in tests,
+ *      V4PositionMinter wrapping live PositionManager.modifyLiquidities on Sepolia).
  *      Unit tests inject LocalPoolManager / LocalPositionManager / mock feeds.
  */
 contract IndexLauncher is ReentrancyGuard {
@@ -48,7 +50,7 @@ contract IndexLauncher is ReentrancyGuard {
     IndexZapRouter public immutable zap;
     IndexFeeHook public immutable hook;
     IPoolManagerMinimal public immutable poolManager;
-    IPositionManagerMinimal public immutable positionManager;
+    ILiquidityMinter public immutable liquidityMinter;
 
     address public owner;
 
@@ -63,6 +65,7 @@ contract IndexLauncher is ReentrancyGuard {
     error NotCreator();
     error MaxUsdcExceeded();
     error InvalidNav();
+    error LengthMismatch();
 
     event OwnerUpdated(address indexed owner);
     event IndexSeeded(
@@ -88,13 +91,13 @@ contract IndexLauncher is ReentrancyGuard {
         IndexZapRouter zap_,
         IndexFeeHook hook_,
         IPoolManagerMinimal poolManager_,
-        IPositionManagerMinimal positionManager_,
+        ILiquidityMinter liquidityMinter_,
         address owner_
     ) {
         if (
             address(factory_) == address(0) || usdc_ == address(0) || address(zap_) == address(0)
                 || address(hook_) == address(0) || address(poolManager_) == address(0)
-                || address(positionManager_) == address(0) || owner_ == address(0)
+                || address(liquidityMinter_) == address(0) || owner_ == address(0)
         ) {
             revert ZeroAddress();
         }
@@ -103,7 +106,7 @@ contract IndexLauncher is ReentrancyGuard {
         zap = zap_;
         hook = hook_;
         poolManager = poolManager_;
-        positionManager = positionManager_;
+        liquidityMinter = liquidityMinter_;
         owner = owner_;
     }
 
@@ -120,6 +123,7 @@ contract IndexLauncher is ReentrancyGuard {
         IndexFactory.CreateIndexParams calldata indexParams,
         uint256 backingUSDC,
         uint256 maxBackingUSDC,
+        uint256[] calldata minAmountsOut,
         uint256 deadline
     ) external nonReentrant returns (address index, address accretionEngine, uint256 grossShares) {
         if (block.timestamp > deadline) revert DeadlineExpired();
@@ -136,11 +140,11 @@ contract IndexLauncher is ReentrancyGuard {
         address[] memory cons = indexParams.constituents;
         uint16[] memory weights = indexParams.initialWeightsBps;
         uint256 n = cons.length;
-        uint256[] memory minOut = new uint256[](n);
+        if (minAmountsOut.length != n) revert LengthMismatch();
 
         usdc.forceApprove(address(zap), backingUSDC);
         uint256[] memory amounts =
-            zap.buyTargetBasketFor(address(this), address(this), cons, weights, backingUSDC, minOut, deadline);
+            zap.buyTargetBasketFor(address(this), address(this), cons, weights, backingUSDC, minAmountsOut, deadline);
         usdc.forceApprove(address(zap), 0);
 
         // Use actual balances received (handles any transfer quirks)
@@ -201,11 +205,11 @@ contract IndexLauncher is ReentrancyGuard {
         (uint256 amount0Desired, uint256 amount1Desired) =
             index < address(usdc) ? (indexAmount, lpUSDC) : (lpUSDC, indexAmount);
 
-        IERC20(index).forceApprove(address(positionManager), indexAmount);
-        usdc.forceApprove(address(positionManager), lpUSDC);
+        IERC20(index).forceApprove(address(liquidityMinter), indexAmount);
+        usdc.forceApprove(address(liquidityMinter), lpUSDC);
 
         (positionTokenId,,) =
-            positionManager.mintFullRange(key, amount0Desired, amount1Desired, 0, 0, creatorOf[index], deadline);
+            liquidityMinter.mintFullRange(key, amount0Desired, amount1Desired, 0, 0, creatorOf[index], deadline);
 
         marketInitialized[index] = true;
 
@@ -214,8 +218,8 @@ contract IndexLauncher is ReentrancyGuard {
         uint256 uBal = usdc.balanceOf(address(this));
         if (uBal > 0) usdc.safeTransfer(msg.sender, uBal);
 
-        IERC20(index).forceApprove(address(positionManager), 0);
-        usdc.forceApprove(address(positionManager), 0);
+        IERC20(index).forceApprove(address(liquidityMinter), 0);
+        usdc.forceApprove(address(liquidityMinter), 0);
 
         emit MarketInitialized(index, poolId, positionTokenId, sqrtPriceX96);
     }

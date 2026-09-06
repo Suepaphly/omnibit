@@ -7,13 +7,13 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Currency} from "@uniswap/v4-core/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/types/PoolKey.sol";
 
-import {IPositionManagerMinimal} from "../../src/periphery/interfaces/IPositionManagerMinimal.sol";
+import {ILiquidityMinter} from "../../src/periphery/interfaces/ILiquidityMinter.sol";
 
 /**
  * @title LocalPositionManager
- * @notice Mock PositionManager: pulls desired amounts, mints incremental token ids to recipient.
+ * @notice Mock ILiquidityMinter: pulls desired amounts, mints incremental token ids to recipient.
  */
-contract LocalPositionManager is IPositionManagerMinimal {
+contract LocalPositionManager is ILiquidityMinter {
     using SafeERC20 for IERC20;
 
     uint256 public nextId = 1;

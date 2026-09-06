@@ -65,3 +65,15 @@ Engine-computed `usdWadIncrement` is trusted display accounting. A compromised e
 ## What this audit surface still excludes
 
 Sepolia live B20 / V4 broadcast verification, production PositionManager calldata, frontend.
+
+
+## Pre-Sepolia review notes (2026-09-05)
+
+Local `forge test`: 102 passed / 0 failed (unit, fuzz, invariant, harness integration).
+
+- **Tracked ≤ raw**, donation non-tracking, syncLoss never increases, accretion supply-flat: covered by unit/fuzz/invariant.
+- **Redeem** does not read oracles; UsdWad is display-only via engine.
+- **Hook** USDC-only fee + unregistered init gate + 50/50 sweep covered by unit tests (LocalPoolManager harness — not live V4).
+- **Launch (S-01):** `ILiquidityMinter` adapter — tests use `LocalPositionManager`; Sepolia uses `V4PositionMinter` → `modifyLiquidities` (see `SEPOLIA_LAUNCH.md` §2.1).
+- **Slippage (S-02 partial):** `createSeed` requires caller-supplied `minAmountsOut[]` (zeros still allowed). Zap mint/redeem paths may still use `minOut = 0` — tighten before valued use.
+- **No Critical protocol insolvency findings** blocking a **testnet** GO once stubs/wrapper are completed. **UNAUDITED.**

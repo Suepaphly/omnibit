@@ -20,6 +20,9 @@ forge test --match-path test/integration/OmnibitLoop.t.sol -vv
 
 ## 2. Sepolia deploy order
 
+> **Full checklist:** [`SEPOLIA_LAUNCH.md`](./SEPOLIA_LAUNCH.md) (prerequisites, verify casts, Vercel env, smoke tests, common failures).
+
+
 Scripts compile locally; **`--broadcast` is Sepolia-only** (keys + live B20/V4).
 
 1. **Create test B20s** — `script/DeployTestB20s.s.sol` (stub against live B20 Factory `0xB20f…0000`). Record `T_NVDA`, `T_MSFT`.

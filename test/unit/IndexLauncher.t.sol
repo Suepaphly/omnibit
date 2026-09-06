@@ -94,10 +94,11 @@ contract IndexLauncherTest is Test {
             name: "Index AI2", symbol: "AI2", constituents: cons, initialWeightsBps: w, creator: creator
         });
 
+        uint256[] memory mins = new uint256[](2);
         vm.startPrank(creator);
         usdc.approve(address(launcher), backing + 100e6);
         (address index, address engine, uint256 grossShares) =
-            launcher.createSeed(params, backing, backing + 100e6, block.timestamp + 1);
+            launcher.createSeed(params, backing, backing + 100e6, mins, block.timestamp + 1);
         vm.stopPrank();
 
         assertTrue(factory.isIndex(index));
@@ -131,9 +132,10 @@ contract IndexLauncherTest is Test {
             name: "Index AI2", symbol: "AI2", constituents: cons, initialWeightsBps: w, creator: creator
         });
 
+        uint256[] memory mins = new uint256[](2);
         vm.startPrank(creator);
         usdc.approve(address(launcher), type(uint256).max);
-        (address index,,) = launcher.createSeed(params, backing, backing, block.timestamp + 1);
+        (address index,,) = launcher.createSeed(params, backing, backing, mins, block.timestamp + 1);
 
         // LP: 50 USDC + 50e18 INDEX
         uint256 lpUSDC = 50e6;

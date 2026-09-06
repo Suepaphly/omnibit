@@ -57,16 +57,20 @@ contract LaunchAI2 is Script {
         console2.log("backingUSDC", backingUSDC);
 
         // --- Tx1 (uncomment for Sepolia broadcast) ---
+        // Requires IndexLauncher wired to V4PositionMinter (see DeployProtocol).
+        // Pass per-leg minAmountsOut (zeros OK for controlled Sepolia demos; tighten later).
         // vm.startBroadcast(creator);
         // IERC20(USDC).approve(address(launcher), backingUSDC);
+        // uint256[] memory minAmountsOut = new uint256[](2); // or set non-zero mins
         // (address index, address engine, uint256 grossShares) =
-        //     launcher.createSeed(params, backingUSDC, backingUSDC, block.timestamp + 1 hours);
+        //     launcher.createSeed(params, backingUSDC, backingUSDC, minAmountsOut, block.timestamp + 1 hours);
         // vm.stopBroadcast();
         // console2.log("index", index);
         // console2.log("engine", engine);
         // console2.log("grossShares", grossShares);
 
         console2.log("Tx2 initializeMarket - after createSeed, set INDEX_AI2 env");
+        // LP mint goes through V4PositionMinter -> PositionManager.modifyLiquidities (S-01).
         // address index = vm.envAddress("INDEX_AI2");
         // vm.startBroadcast(creator);
         // IERC20(USDC).approve(address(launcher), lpUSDC);
@@ -76,6 +80,7 @@ contract LaunchAI2 is Script {
         // vm.stopBroadcast();
 
         console2.log("NOTE: placeholders only - set env + --broadcast on 84532 to execute");
+        console2.log("NOTE: createSeed now requires minAmountsOut[] (length == constituents)");
         console2.log("lpUSDC placeholder", lpUSDC);
         // silence unused
         launcher;

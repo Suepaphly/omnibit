@@ -144,9 +144,11 @@ contract OmnibitLoopTest is Test {
             name: "Index AI2", symbol: "AI2", constituents: cons, initialWeightsBps: w, creator: creator
         });
 
+        uint256[] memory mins = new uint256[](2);
         vm.startPrank(creator);
         usdc.approve(address(launcher), type(uint256).max);
-        (address indexAddr, address engineAddr,) = launcher.createSeed(params, backing, backing, block.timestamp + 1);
+        (address indexAddr, address engineAddr,) =
+            launcher.createSeed(params, backing, backing, mins, block.timestamp + 1);
         index = AccretiveIndex(indexAddr);
         engine = AccretionEngine(engineAddr);
 

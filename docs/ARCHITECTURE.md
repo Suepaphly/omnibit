@@ -14,6 +14,7 @@
 | **NavLib / SqrtPriceLib / HookMiner** | `src/libs/` | WAD NAV; sqrtPriceX96; CREATE2 salt mine |
 | **MockPriceFeed** | `src/testnet/MockPriceFeed.sol` | AggregatorV3 mock |
 | **LocalPoolManager / LocalPositionManager** | `test/harness/` | Unit-test doubles for V4 surfaces |
+| **V4PositionMinter** | `src/periphery/minter/V4PositionMinter.sol` | Sepolia ILiquidityMinter → PositionManager.modifyLiquidities |
 
 ## System diagram
 
@@ -27,7 +28,8 @@ Creator
   └─ IndexLauncher.initializeMarket
        ├─ IndexFeeHook.registerPool
        ├─ PoolManager.initialize (sqrtPrice from SqrtPriceLib)
-       └─ PositionManager.mintFullRange → NFT to creator
+       └─ ILiquidityMinter.mintFullRange → NFT to creator
+            (LocalPositionManager | V4PositionMinter → modifyLiquidities)
 
 Live loop
   ├─ mintExactShares / Zap mintExactSharesWithUSDC
@@ -85,4 +87,4 @@ Stale/non-positive feeds revert harvest (MAY block harvest per spec). Redeem nev
 - Live B20 creation + constituent/USDC pool seeding
 - Broadcast deploy/launch/demo scripts against real V4 addresses
 - Fork/Sepolia integration against live PoolManager (local loop covered in `OmnibitLoop.t.sol`)
-- Production PositionManager action encoding / Permit2 approvals
+- Constituent pool seeding (`SeedConstituentPools`) still stub — needs live V4 mint encoding

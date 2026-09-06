@@ -7,7 +7,8 @@ export type GuideSlug =
   | 'accounting'
   | 'security'
   | 'glossary'
-  | 'runbook';
+  | 'runbook'
+  | 'sepolia-launch';
 
 export type DocHeading = { id: string; text: string; level: 2 | 3 };
 
@@ -82,6 +83,14 @@ export const GUIDE_META: GuideMeta[] = [
     href: '/docs/runbook',
     file: 'RUNBOOK.md',
     title: 'Runbook',
+  },
+  {
+    kind: 'guide',
+    slug: 'sepolia-launch',
+    segments: ['sepolia-launch'],
+    href: '/docs/sepolia-launch',
+    file: 'SEPOLIA_LAUNCH.md',
+    title: 'Sepolia launch',
   },
 ];
 
