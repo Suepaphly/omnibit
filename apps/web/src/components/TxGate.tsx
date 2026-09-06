@@ -24,15 +24,15 @@ export function TxGate({
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-3 text-sm text-amber-100">
-        <p className="font-semibold text-accretion-soft">Transactions disabled for {actionLabel}</p>
+        <p className="font-semibold text-accretion-soft">Not ready for {actionLabel} yet</p>
         <p className="mt-1.5 text-amber-100/80">
-          Missing env address(es):{' '}
+          Missing contract address(es) in env:{' '}
           <code className="rounded bg-canvas/50 px-1 font-mono text-xs text-accretion-soft">
             {missing.map((k) => envKey(k)).join(', ')}
           </code>
-          . Fill <code className="font-mono text-xs">.env.local</code> from{' '}
-          <code className="font-mono text-xs">.env.example</code> after Sepolia deploy, then
-          rebuild.
+          . After you deploy on Base Sepolia, fill{' '}
+          <code className="font-mono text-xs">.env.local</code> (or Vercel env) from{' '}
+          <code className="font-mono text-xs">.env.example</code> and redeploy.
         </p>
       </div>
       <div className="pointer-events-none select-none opacity-40">{children}</div>

@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
-import { useReadContract, useReadContracts } from 'wagmi';
+import { useMemo, useState } from 'react';
+import { useReadContracts } from 'wagmi';
 import { Panel, Stat } from '@/components/Panel';
 import { PageHeader } from '@/components/PageHeader';
+import { StepsGuide } from '@/components/StepsGuide';
 import { addresses, hasAddress } from '@/config/addresses';
 import { AccretiveIndexAbi, erc20Abi, IndexFactoryAbi } from '@/abi';
 import { fmtUnits, fmtUsdWad, shortAddr } from '@/lib/format';
@@ -11,6 +12,7 @@ import { fmtUnits, fmtUsdWad, shortAddr } from '@/lib/format';
 export default function VaultPage() {
   const index = addresses.ai2;
   const enabled = hasAddress(index);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const { data: meta } = useReadContracts({
     contracts: enabled
@@ -56,7 +58,6 @@ export default function VaultPage() {
     query: { enabled: basketReads.length > 0 },
   });
 
-  // NAV per share ≈ (basket USD via feeds) / supply — display only
   const factory = addresses.factory;
   const feedCalls = useMemo(() => {
     if (!factory || !constituents?.length) return [];
@@ -84,8 +85,6 @@ export default function VaultPage() {
     return { c, sym, tracked, raw, accrRaw, donation, feed: feeds?.[i]?.result as `0x${string}` | undefined };
   });
 
-  // Simple navPerShare from accretion display: if supply>0, show 1e18 + usdWad/supply as rough uplift heuristic,
-  // plus note that full NAV uses feeds.
   const navPerShare =
     totalSupply && totalSupply > 0n && usdWad !== undefined
       ? 10n ** 18n + (usdWad * 10n ** 18n) / totalSupply
@@ -95,44 +94,107 @@ export default function VaultPage() {
     <div className="space-y-6">
       <PageHeader
         title="Vault"
-        subtitle="Tracked vs raw balances, supply, and accretion display. Donations stay untracked; UsdWad is NAV display only."
+        subtitle="Read-only view of the index: share supply, estimated value per share, and what’s in the basket."
       />
+
+      <StepsGuide
+        title="How to use this page"
+        defaultOpen
+        steps={[
+          {
+            title: 'Set the index address',
+            body: 'Requires NEXT_PUBLIC_AI2_INDEX after launch (or deploy). Until then you’ll see an empty state.',
+          },
+          {
+            title: 'Scan the summary cards',
+            body: 'Supply, seeded flag, and estimated value per share are the main health checks.',
+          },
+          {
+            title: 'Inspect the basket table',
+            body: 'Each asset shows recognized holdings vs on-chain balance. Extra “donation” tokens stay untracked.',
+          },
+          {
+            title: 'Open advanced details if needed',
+            body: 'Fees in basis points, engine address, and UsdWad live under “Advanced”.',
+          },
+        ]}
+      />
+
       <Panel
-        title="Vault"
-        subtitle="Recognized trackedBalance vs raw ERC-20 balances. Donations are untracked. cumulativeAccretedUsdWad is display/NAV only — never redeem rights."
+        title="Index summary"
+        subtitle="High-level vault health. Technical fields are behind tooltips or Advanced."
       >
         {!enabled && (
-          <p className="rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-amber-100">
-            Set <code className="font-mono text-xs">NEXT_PUBLIC_AI2_INDEX</code> to load vault state.
+          <p className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-amber-100">
+            No index address yet. Launch an index or set{' '}
+            <code className="font-mono text-xs">NEXT_PUBLIC_AI2_INDEX</code> and redeploy.
           </p>
         )}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Index" value={name && symbol ? `${name} (${symbol})` : shortAddr(index)} />
-          <Stat label="totalSupply" value={fmtUnits(totalSupply, 18)} hint="18 decimals" />
+          <Stat label="Shares outstanding" value={fmtUnits(totalSupply, 18)} hint="totalSupply · 18 decimals" />
           <Stat
-            label="navPerShare (display)"
+            label="Est. value / share"
             value={fmtUsdWad(navPerShare)}
-            hint="~$1 seed + UsdWad/supply heuristic"
+            hint="Display heuristic"
+            help="Rough navPerShare: ~$1 seed plus cumulativeAccretedUsdWad / supply. Full NAV uses price feeds."
           />
-          <Stat label="cumulativeAccretedUsdWad" value={fmtUsdWad(usdWad)} />
-          <Stat label="seeded" value={seeded === undefined ? '—' : String(seeded)} />
-          <Stat label="mintFeeBps" value={mintFee?.toString() ?? '—'} />
-          <Stat label="redeemFeeBps" value={redeemFee?.toString() ?? '—'} />
-          <Stat label="engine" value={shortAddr(engine ?? addresses.engine)} />
+          <Stat
+            label="Seeded"
+            value={seeded === undefined ? '—' : seeded ? 'Yes' : 'No'}
+            help="True after createSeed has funded the initial basket."
+          />
         </div>
+
+        <button
+          type="button"
+          className="mt-4 text-xs font-medium text-accent-soft underline-offset-2 hover:underline"
+          onClick={() => setShowAdvanced((v) => !v)}
+        >
+          {showAdvanced ? 'Hide advanced' : 'Show advanced details'}
+        </button>
+        {showAdvanced && (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat
+              label="Accrued USD (display)"
+              value={fmtUsdWad(usdWad)}
+              help="cumulativeAccretedUsdWad — NAV display only; never redeem rights."
+            />
+            <Stat
+              label="Mint fee"
+              value={mintFee !== undefined ? `${mintFee} bps` : '—'}
+              help="bps = basis points. 10 bps = 0.10%."
+            />
+            <Stat
+              label="Redeem fee"
+              value={redeemFee !== undefined ? `${redeemFee} bps` : '—'}
+              help="bps = basis points. 10 bps = 0.10%."
+            />
+            <Stat label="Accretion engine" value={shortAddr(engine ?? addresses.engine)} />
+          </div>
+        )}
       </Panel>
 
-      <Panel title="Constituents — tracked vs raw" subtitle="invariant: tracked ≤ raw after successful state changes">
+      <Panel
+        title="Basket holdings"
+        subtitle="Recognized vs on-chain balances. Donations (raw − tracked) do not increase redeemable claims."
+      >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr>
                 <th className="py-2 pr-3">Asset</th>
-                <th className="py-2 pr-3">Tracked</th>
-                <th className="py-2 pr-3">Raw</th>
+                <th className="py-2 pr-3">
+                  Recognized
+                  <span className="ml-1 font-normal normal-case tracking-normal text-slate-600">(tracked)</span>
+                </th>
+                <th className="py-2 pr-3">
+                  On-chain
+                  <span className="ml-1 font-normal normal-case tracking-normal text-slate-600">(raw)</span>
+                </th>
                 <th className="py-2 pr-3">Donation</th>
-                <th className="py-2 pr-3">Accreted raw</th>
-                <th className="py-2">Feed</th>
+                <th className="py-2 pr-3">Accrued raw</th>
+                <th className="py-2">Price feed</th>
               </tr>
             </thead>
             <tbody>
@@ -159,6 +221,9 @@ export default function VaultPage() {
             </tbody>
           </table>
         </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Invariant: recognized (tracked) ≤ on-chain (raw) after successful state changes.
+        </p>
       </Panel>
     </div>
   );

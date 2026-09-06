@@ -12,6 +12,7 @@ import { Panel, Field, inputClass, btnPrimary, btnSecondary, Stat } from '@/comp
 import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
+import { StepsGuide } from '@/components/StepsGuide';
 import { addresses, hasAddress } from '@/config/addresses';
 import { erc20Abi, IndexFeeHookAbi } from '@/abi';
 import { bpsOf, fmtUnits, shortAddr } from '@/lib/format';
@@ -45,6 +46,7 @@ export default function TradePage() {
   const { address } = useAccount();
   const [direction, setDirection] = useState<'buy' | 'sell'>('buy');
   const [amountIn, setAmountIn] = useState('10');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const ai2 = addresses.ai2;
   const usdc = addresses.usdc;
@@ -60,7 +62,6 @@ export default function TradePage() {
     }
   }, [amountIn, direction]);
 
-  // Fee notional in USDC terms for display
   const usdcNotional =
     direction === 'buy'
       ? parsedIn
@@ -103,10 +104,7 @@ export default function TradePage() {
   function swap() {
     if (!router || !ai2 || !address || parsedIn === 0n) return;
     reset();
-    // Commands: V4_SWAP = 0x10
     const commands = '0x10' as Hex;
-    // Encode a placeholder input blob documenting intent; production should use v4-sdk ActionConstants.
-    // We encode (address tokenIn, address tokenOut, uint256 amountIn, uint256 minOut, address recipient)
     const input = encodeAbiParameters(
       [
         { type: 'address' },
@@ -131,11 +129,35 @@ export default function TradePage() {
     <div className="space-y-6">
       <PageHeader
         title="Trade"
-        subtitle="Exact-in AI2 ↔ USDC on the canonical V4 pool. LP fee and protocol hook fee shown separately."
+        subtitle="Buy or sell index shares against USDC on the canonical Uniswap V4 pool. Fees are shown separately."
       />
+
+      <StepsGuide
+        title="How to use this page"
+        defaultOpen
+        steps={[
+          {
+            title: 'Pick buy or sell',
+            body: 'Buy: spend USDC for AI2. Sell: spend AI2 for USDC.',
+          },
+          {
+            title: 'Enter the amount in',
+            body: 'Exact-in swap. Estimated LP fee and protocol fee update as you type.',
+          },
+          {
+            title: 'Approve the token you’re selling',
+            body: 'Approve USDC (buy) or AI2 (sell) for the Universal Router.',
+          },
+          {
+            title: 'Swap on Base Sepolia',
+            body: 'If the MVP router calldata reverts, use Uniswap’s UI against the same pool — fee math here still applies.',
+          },
+        ]}
+      />
+
       <Panel
-        title="Trade — exact-in AI2 ↔ USDC"
-        subtitle="Canonical INDEX/USDC pool: LP fee 5 bps (fee=500) stays with LPs; protocol hook takes 5 bps in USDC into pendingHookUsdc. Fees shown separately."
+        title="Swap AI2 ↔ USDC"
+        subtitle="Pool liquidity providers earn 5 bps; the protocol hook takes another 5 bps in USDC."
       >
         <div className="mb-4 flex gap-2">
           <button
@@ -143,56 +165,76 @@ export default function TradePage() {
             className={direction === 'buy' ? btnPrimary : btnSecondary}
             onClick={() => setDirection('buy')}
           >
-            Buy AI2 (USDC → AI2)
+            Buy AI2
           </button>
           <button
             type="button"
             className={direction === 'sell' ? btnPrimary : btnSecondary}
             onClick={() => setDirection('sell')}
           >
-            Sell AI2 (AI2 → USDC)
+            Sell AI2
           </button>
         </div>
 
-        <Field label={direction === 'buy' ? 'USDC in (6 dec)' : 'AI2 in (18 dec)'}>
+        <Field label={direction === 'buy' ? 'USDC to spend' : 'AI2 to sell'}>
           <input className={inputClass} value={amountIn} onChange={(e) => setAmountIn(e.target.value)} />
         </Field>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Stat
-            label="LP fee (5 bps)"
+            label="LP fee (~5 bps)"
             value={`${fmtUnits(lpFee, 6)} USDC`}
-            hint="Stays with LPs in pool units"
+            hint="Stays with LPs"
+            help="Pool fee = 500 (5 bps). Remains in pool units for liquidity providers."
           />
           <Stat
-            label="Protocol hook (5 bps)"
+            label="Protocol fee (~5 bps)"
             value={`${fmtUnits(hookFee, 6)} USDC`}
-            hint="Accrues pendingHookUsdc"
+            hint="Goes to hook"
+            help="IndexFeeHook takes 5 bps in USDC into pendingHookUsdc for later sweep/harvest."
           />
-          <Stat label="pendingHookUsdc" value={fmtUnits(pending as bigint | undefined, 6)} />
-          <Stat label="PoolId" value={poolId ? shortAddr(poolId) : 'unset'} />
+          <Stat
+            label="Fees waiting to sweep"
+            value={fmtUnits(pending as bigint | undefined, 6)}
+            help="pendingHookUsdc for this PoolId — sweep on the Accretion page."
+          />
         </div>
 
-        <p className="mt-3 text-xs text-slate-500">
-          Token in {shortAddr(tokenIn)} → out {shortAddr(tokenOut)} via Universal Router{' '}
-          {shortAddr(router)}. Adapter allowlist is Zap/engines only — retail swaps use the V4
-          router/pool path.
-        </p>
+        <button
+          type="button"
+          className="mt-4 text-xs font-medium text-accent-soft underline-offset-2 hover:underline"
+          onClick={() => setShowAdvanced((v) => !v)}
+        >
+          {showAdvanced ? 'Hide advanced' : 'Show pool / router details'}
+        </button>
+        {showAdvanced && (
+          <div className="mt-3 space-y-2 text-xs text-slate-500">
+            <Stat
+              label="PoolId"
+              value={poolId ? shortAddr(poolId) : 'unset'}
+              help="Bytes32 id of the canonical INDEX/USDC V4 pool (NEXT_PUBLIC_AI2_POOL_ID)."
+            />
+            <p className="pt-1">
+              Token in {shortAddr(tokenIn)} → out {shortAddr(tokenOut)} via Universal Router{' '}
+              {shortAddr(router)}.
+            </p>
+          </div>
+        )}
 
         <TxGate require={['ai2', 'usdc', 'universalRouter']} actionLabel="swap">
           <div className="mt-5 flex flex-wrap gap-2">
             <button type="button" className={btnSecondary} disabled={isPending || !address} onClick={approve}>
-              Approve tokenIn
+              Approve {direction === 'buy' ? 'USDC' : 'AI2'}
             </button>
             <button type="button" className={btnPrimary} disabled={isPending || !address || parsedIn === 0n} onClick={swap}>
-              Swap exact-in
+              Swap
             </button>
           </div>
           <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
           <p className="mt-2 text-[11px] text-slate-500">
             Note: Universal Router V4 calldata is intentionally minimal in this MVP. If execute
             reverts, verify pool initialization and use Uniswap&apos;s interface against the same
-            PoolKey; fee breakdown above remains accurate for economics testing.
+            pool; fee breakdown above remains accurate for economics testing.
           </p>
         </TxGate>
       </Panel>

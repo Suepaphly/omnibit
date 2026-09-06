@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { NetworkBadge } from '@/components/NetworkBadge';
 
 export function PageHeader({
   title,
@@ -18,12 +19,7 @@ export function PageHeader({
           <h1 className="text-2xl font-semibold tracking-tight text-slate-50 sm:text-[1.65rem]">
             {title}
           </h1>
-          {badge ?? (
-            <span className="chain-badge">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse-soft" />
-              Base Sepolia · 84532
-            </span>
-          )}
+          {badge ?? <NetworkBadge />}
         </div>
         {subtitle && <p className="max-w-2xl text-sm leading-relaxed text-slate-400">{subtitle}</p>}
       </div>

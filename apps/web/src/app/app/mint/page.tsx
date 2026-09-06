@@ -12,6 +12,7 @@ import { Panel, Field, inputClass, btnPrimary, btnSecondary, Stat } from '@/comp
 import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
+import { StepsGuide } from '@/components/StepsGuide';
 import { addresses, hasAddress } from '@/config/addresses';
 import { AccretiveIndexAbi, IndexZapRouterAbi, erc20Abi } from '@/abi';
 import { deadlineSeconds, fmtUnits, shortAddr } from '@/lib/format';
@@ -71,7 +72,6 @@ export default function MintPage() {
   function approveConstituents() {
     if (!index || !constituents || !required) return;
     reset();
-    // approve first constituent that needs allowance — user may click per asset
     for (let i = 0; i < constituents.length; i++) {
       if ((required[i] ?? 0n) > 0n) {
         writeContract({
@@ -122,11 +122,35 @@ export default function MintPage() {
     <div className="space-y-6">
       <PageHeader
         title="Mint"
-        subtitle="In-kind mintExactShares or USDC zap. Preview ceil pro-rata basket and 10 bps share fee before sending."
+        subtitle="Deposit basket assets — or pay with USDC — to receive index shares. Preview amounts before you send."
       />
+
+      <StepsGuide
+        title="How to use this page"
+        defaultOpen
+        steps={[
+          {
+            title: 'Choose a path',
+            body: 'In-kind: you already hold the basket tokens. Zap: pay USDC and the router buys constituents for you.',
+          },
+          {
+            title: 'Enter how many shares you want',
+            body: 'Gross shares (18 decimals). The preview shows what you’ll receive after the small share fee.',
+          },
+          {
+            title: 'Approve spending',
+            body: 'In-kind: approve each required constituent. Zap: approve USDC for the zap router.',
+          },
+          {
+            title: 'Confirm mint',
+            body: 'Submit the transaction on Base Sepolia and wait for confirmation.',
+          },
+        ]}
+      />
+
       <Panel
-        title="Mint"
-        subtitle="In-kind mintExactShares pulls ceil pro-rata basket. Zap path buys constituents with USDC then mints. 10 bps share fee to treasury."
+        title="Mint shares"
+        subtitle="A small share fee (typically 10 bps) goes to the treasury. Preview before sending."
       >
         <div className="mb-4 flex gap-2">
           <button
@@ -134,41 +158,53 @@ export default function MintPage() {
             className={mode === 'inkind' ? btnPrimary : btnSecondary}
             onClick={() => setMode('inkind')}
           >
-            In-kind
+            Deposit basket (in-kind)
           </button>
           <button
             type="button"
             className={mode === 'zap' ? btnPrimary : btnSecondary}
             onClick={() => setMode('zap')}
           >
-            Zap USDC
+            Pay with USDC (zap)
           </button>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Gross shares (18 dec)">
+          <Field
+            label="Shares to mint (gross)"
+            help="Gross share amount before the mint fee. previewMint returns userShares and feeShares."
+          >
             <input className={inputClass} value={gross} onChange={(e) => setGross(e.target.value)} />
           </Field>
           {mode === 'zap' && (
-            <Field label="Max USDC">
+            <Field
+              label="Max USDC to spend"
+              help="Slippage cap for mintExactSharesWithUSDC — transaction reverts if cost exceeds this."
+            >
               <input className={inputClass} value={maxUsdc} onChange={(e) => setMaxUsdc(e.target.value)} />
             </Field>
           )}
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <Stat label="preview userShares" value={fmtUnits(userShares)} />
-          <Stat label="preview feeShares" value={fmtUnits(feeShares)} hint="10 bps" />
-          <Stat label="index" value={shortAddr(index)} />
+          <Stat label="You receive" value={fmtUnits(userShares)} help="userShares after fee from previewMint." />
+          <Stat
+            label="Share fee"
+            value={fmtUnits(feeShares)}
+            hint="~10 bps"
+            help="feeShares — typically 10 basis points (0.10%) of gross shares to treasury."
+          />
+          <Stat label="Index" value={shortAddr(index)} />
         </div>
 
         {required && constituents && (
           <div className="mt-4 overflow-x-auto">
+            <p className="mb-2 text-xs font-medium text-slate-500">Basket required (ceil)</p>
             <table className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="py-2 pr-3">Constituent</th>
-                  <th className="py-2">Required (ceil)</th>
+                  <th className="py-2 pr-3">Asset</th>
+                  <th className="py-2">Amount needed</th>
                 </tr>
               </thead>
               <tbody>
@@ -187,10 +223,10 @@ export default function MintPage() {
           <TxGate require={['ai2']} actionLabel="in-kind mint">
             <div className="mt-5 flex flex-wrap gap-2">
               <button type="button" className={btnSecondary} disabled={isPending} onClick={approveConstituents}>
-                Approve next constituent
+                Approve next basket token
               </button>
               <button type="button" className={btnPrimary} disabled={isPending || !address} onClick={mintInKind}>
-                mintExactShares
+                Mint shares
               </button>
             </div>
             <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
@@ -199,12 +235,15 @@ export default function MintPage() {
           <TxGate require={['ai2', 'zap', 'usdc']} actionLabel="USDC zap mint">
             <div className="mt-5 flex flex-wrap gap-2">
               <button type="button" className={btnSecondary} disabled={isPending} onClick={approveUsdcZap}>
-                Approve USDC → Zap
+                Approve USDC for zap
               </button>
               <button type="button" className={btnPrimary} disabled={isPending} onClick={mintZap}>
-                mintExactSharesWithUSDC
+                Mint with USDC
               </button>
             </div>
+            <p className="mt-2 text-[11px] text-slate-500">
+              Zap = IndexZapRouter buys constituents with your USDC, then mints shares in one flow.
+            </p>
             <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
           </TxGate>
         )}

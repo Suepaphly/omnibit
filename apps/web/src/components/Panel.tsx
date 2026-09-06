@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { HelpTip } from '@/components/HelpTip';
 
 export function Panel({
   title,
@@ -29,11 +30,14 @@ export function Stat({
   label,
   value,
   hint,
+  help,
   tone = 'default',
 }: {
   label: string;
   value: string;
   hint?: string;
+  /** Technical explanation shown in a “?” tooltip. */
+  help?: ReactNode;
   tone?: 'default' | 'accent' | 'accretion' | 'ok' | 'warn';
 }) {
   const valueTone =
@@ -49,7 +53,10 @@ export function Stat({
 
   return (
     <div className="rounded-xl border border-canvas-border/70 bg-canvas/60 px-3.5 py-3">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{label}</div>
+      <div className="flex items-center text-[11px] font-medium uppercase tracking-wider text-slate-500">
+        {label}
+        {help != null && <HelpTip>{help}</HelpTip>}
+      </div>
       <div className={`mt-1 break-all font-mono text-sm ${valueTone}`}>{value}</div>
       {hint && <div className="mt-1 text-[11px] text-slate-500">{hint}</div>}
     </div>
@@ -58,14 +65,19 @@ export function Stat({
 
 export function Field({
   label,
+  help,
   children,
 }: {
-  label: string;
+  label: ReactNode;
+  help?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-xs font-medium text-slate-400">{label}</span>
+      <span className="inline-flex items-center text-xs font-medium text-slate-400">
+        {label}
+        {help != null && <HelpTip>{help}</HelpTip>}
+      </span>
       {children}
     </label>
   );

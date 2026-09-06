@@ -12,6 +12,7 @@ import { Panel, Field, inputClass, btnPrimary, Stat } from '@/components/Panel';
 import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
+import { StepsGuide } from '@/components/StepsGuide';
 import { addresses, hasAddress } from '@/config/addresses';
 import { AccretiveIndexAbi } from '@/abi';
 import { fmtUnits, shortAddr } from '@/lib/format';
@@ -80,31 +81,61 @@ export default function RedeemPage() {
     <div className="space-y-6">
       <PageHeader
         title="Redeem"
-        subtitle="In-kind primary solvency path: share fee, burn, floor pro-rata constituents. No oracle or DEX."
+        subtitle="Burn index shares and receive your pro-rata slice of the basket — no oracle or DEX required."
       />
+
+      <StepsGuide
+        title="How to use this page"
+        defaultOpen
+        steps={[
+          {
+            title: 'Connect on Base Sepolia',
+            body: 'Your wallet must hold AI2 shares on Base Sepolia.',
+          },
+          {
+            title: 'Enter shares to redeem',
+            body: 'Preview shows the share fee and how much of each basket asset you’ll receive (floor).',
+          },
+          {
+            title: 'Confirm redeem',
+            body: 'Burns shares after the fee and sends floor pro-rata constituents to your wallet.',
+          },
+        ]}
+      />
+
       <Panel
-        title="Redeem (in-kind)"
-        subtitle="Primary solvency path: share fee to treasury, burn redeemShares, floor pro-rata constituents. No oracle/DEX."
+        title="Redeem for basket assets"
+        subtitle="Primary solvency path: small share fee, burn, then floor pro-rata basket. In-kind only."
       >
         <div className="grid gap-3 sm:grid-cols-3">
           <Stat label="Your AI2 balance" value={fmtUnits(bal as bigint | undefined)} />
-          <Stat label="preview redeemShares" value={fmtUnits(redeemShares)} />
-          <Stat label="preview feeShares" value={fmtUnits(feeShares)} hint="10 bps" />
+          <Stat
+            label="Shares burned"
+            value={fmtUnits(redeemShares)}
+            help="redeemShares from previewRedeem — amount burned after fee."
+          />
+          <Stat
+            label="Share fee"
+            value={fmtUnits(feeShares)}
+            hint="~10 bps"
+            help="feeShares — typically 10 basis points to treasury."
+          />
         </div>
 
         <div className="mt-4">
-          <Field label="Shares in (18 dec)">
+          <Field label="Shares to redeem" help="Gross shares in (18 decimals) passed to redeem().">
             <input className={inputClass} value={shares} onChange={(e) => setShares(e.target.value)} />
           </Field>
         </div>
 
         {assetOut && constituents && (
           <div className="mt-4 overflow-x-auto">
+            <p className="mb-2 text-xs font-medium text-slate-500">You receive (floor)</p>
             <table className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="py-2 pr-3">Constituent</th>
-                  <th className="py-2">assetOut (floor)</th>
+                  <th className="py-2 pr-3">Asset</th>
+                  <th className="py-2">Amount out</th>
                 </tr>
               </thead>
               <tbody>
@@ -122,7 +153,7 @@ export default function RedeemPage() {
         <TxGate require={['ai2']} actionLabel="redeem">
           <div className="mt-5">
             <button type="button" className={btnPrimary} disabled={isPending || !address} onClick={redeem}>
-              redeem
+              Redeem shares
             </button>
           </div>
           <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />

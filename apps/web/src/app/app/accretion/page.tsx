@@ -10,6 +10,7 @@ import { Panel, Field, inputClass, btnPrimary, Stat } from '@/components/Panel';
 import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
+import { StepsGuide } from '@/components/StepsGuide';
 import { addresses, hasAddress } from '@/config/addresses';
 import { IndexFeeHookAbi, AccretionEngineAbi, erc20Abi, AccretiveIndexAbi } from '@/abi';
 import { deadlineSeconds, fmtUnits, shortAddr } from '@/lib/format';
@@ -22,6 +23,7 @@ export default function AccretionPage() {
   const index = addresses.ai2;
   const [minOut0, setMinOut0] = useState('0');
   const [minOut1, setMinOut1] = useState('0');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const { data: pending } = useReadContract({
     address: hook,
@@ -73,7 +75,6 @@ export default function AccretionPage() {
   const minOut = useMemo(() => {
     const parse = (s: string) => {
       try {
-        // constituent 18 dec mins
         return BigInt(s || '0');
       } catch {
         return 0n;
@@ -108,48 +109,101 @@ export default function AccretionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Accretion"
-        subtitle="Sweep pending hook USDC, then harvest into constituents at launch weights — zero new shares."
+        subtitle="Move protocol trading fees into the vault so existing shares become more valuable — without minting new shares."
       />
+
+      <StepsGuide
+        title="How to use this page"
+        defaultOpen
+        steps={[
+          {
+            title: 'Check fees waiting to sweep',
+            body: 'Protocol hook fees from trading accumulate as USDC. Sweep splits them between treasury and the accretion engine.',
+          },
+          {
+            title: 'Sweep fees',
+            body: 'Moves pending USDC out of the hook (50/50 treasury / engine; odd wei → engine).',
+          },
+          {
+            title: 'Set minimum outputs (optional)',
+            body: 'Slippage floors for each constituent when harvesting. Leave 0 for open (testnet).',
+          },
+          {
+            title: 'Harvest into the basket',
+            body: 'Engine buys constituents at launch weights and deposits them — zero new shares (non-dilutive).',
+          },
+        ]}
+      />
+
       <Panel
-        title="Accretion loop"
-        subtitle="sweepFees splits pendingHookUsdc 50/50 treasury/engine (odd wei → engine). harvest buys at launch weights, worst-leg depositAccretion (zero new shares)."
+        title="Grow the index"
+        subtitle="Two steps: sweep protocol fees, then harvest them into basket assets."
       >
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="pendingHookUsdc" value={fmtUnits(pending as bigint | undefined, 6)} hint="6 dec" />
-          <Stat label="engine USDC" value={fmtUnits(engineUsdc, 6)} />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Stat
-            label="sweep split"
+            label="Fees waiting to sweep"
+            value={fmtUnits(pending as bigint | undefined, 6)}
+            hint="USDC"
+            help="pendingHookUsdc — protocol hook fee accrued for this PoolId."
+          />
+          <Stat label="Engine USDC balance" value={fmtUnits(engineUsdc, 6)} hint="Ready to harvest" />
+          <Stat
+            label="Sweep split preview"
             value={
               split
-                ? `T ${fmtUnits(split[0], 6)} / E ${fmtUnits(split[1], 6)}`
+                ? `Treasury ${fmtUnits(split[0], 6)} / Engine ${fmtUnits(split[1], 6)}`
                 : '—'
             }
+            help="splitFees(pending): 50/50 treasury vs engine; odd wei goes to engine."
           />
-          <Stat label="cumulativeAccretedUsdWad" value={fmtUnits(usdWad as bigint | undefined, 18, 4)} />
         </div>
 
-        <div className="mt-4 text-xs text-slate-500">
-          Launch weights:{' '}
-          <span className="font-mono">
-            {weights ? (weights as number[]).join(' / ') + ' bps' : '—'}
-          </span>
-          {' · '}
-          Engine {shortAddr(engine)} · Hook {shortAddr(hook)}
-        </div>
+        <button
+          type="button"
+          className="mt-4 text-xs font-medium text-accent-soft underline-offset-2 hover:underline"
+          onClick={() => setShowAdvanced((v) => !v)}
+        >
+          {showAdvanced ? 'Hide advanced' : 'Show advanced details'}
+        </button>
+        {showAdvanced && (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Stat
+              label="Accrued USD (display)"
+              value={fmtUnits(usdWad as bigint | undefined, 18, 4)}
+              help="cumulativeAccretedUsdWad — NAV display only."
+            />
+            <div className="rounded-xl border border-canvas-border/70 bg-canvas/60 px-3.5 py-3 text-xs text-slate-400">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Weights & contracts</div>
+              <p className="mt-1 font-mono">
+                Launch weights:{' '}
+                {weights ? (weights as number[]).join(' / ') + ' bps' : '—'}
+              </p>
+              <p className="mt-1">
+                Engine {shortAddr(engine)} · Hook {shortAddr(hook)}
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="harvest minOut[0] (raw wei)">
+          <Field
+            label="Harvest min out — asset 0"
+            help="Minimum raw wei of first constituent from harvest (slippage protection)."
+          >
             <input className={inputClass} value={minOut0} onChange={(e) => setMinOut0(e.target.value)} />
           </Field>
-          <Field label="harvest minOut[1] (raw wei)">
+          <Field
+            label="Harvest min out — asset 1"
+            help="Minimum raw wei of second constituent from harvest (slippage protection)."
+          >
             <input className={inputClass} value={minOut1} onChange={(e) => setMinOut1(e.target.value)} />
           </Field>
         </div>
 
-        <TxGate require={['hook', 'poolId']} actionLabel="sweepFees">
+        <TxGate require={['hook', 'poolId']} actionLabel="sweep fees">
           <div className="mt-5 flex flex-wrap gap-2">
             <button type="button" className={btnPrimary} disabled={isPending} onClick={sweep}>
-              sweepFees
+              Sweep fees
             </button>
           </div>
         </TxGate>
@@ -157,7 +211,7 @@ export default function AccretionPage() {
         <TxGate require={['engine']} actionLabel="harvest">
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" className={btnPrimary} disabled={isPending} onClick={harvest}>
-              harvest
+              Harvest into basket
             </button>
           </div>
           <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
