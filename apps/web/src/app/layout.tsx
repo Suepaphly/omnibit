@@ -45,7 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-screen flex-col font-sans">
         <Providers>
           <header className="sticky top-0 z-40 border-b border-canvas-border/70 bg-canvas/75 backdrop-blur-xl">
-            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="flex flex-wrap items-center gap-4 sm:gap-8">
                 <BrandLockup />
                 <Nav />
@@ -53,7 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <ConnectButton />
             </div>
           </header>
-          <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
+          <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8">{children}</main>
           <Footer />
         </Providers>
       </body>
