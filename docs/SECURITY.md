@@ -1,4 +1,4 @@
-# Security notes — AccretiveIndex core
+# Security notes — AccretiveIndex + Factory + Engine
 
 **Status: UNAUDITED.** Do not use with mainnet value.
 
@@ -6,57 +6,57 @@
 
 | Actor | Power |
 |-------|-------|
-| `launcher` | One-shot `seed` |
+| Factory `DEFAULT_ADMIN_ROLE` | Set launcher / treasury / swapAdapter; grant guardian |
+| Factory `GUARDIAN_ROLE` | `approveAsset` / `setPriceFeed` / `revokeAsset` |
+| `launcher` | `createIndex` (factory); one-shot `seed` (vault) |
 | `accretionEngine` | `depositAccretion` (increases tracked, no mint) |
 | `protocolTreasury` | Receives fee shares; can redeem like any holder |
-| Public | `mintExactShares`, `redeem`, `syncLoss`, ERC-20 transfers |
+| Public | `mintExactShares`, `redeem`, `syncLoss`, `harvest`, ERC-20 transfers |
 | Anyone | Can donate tokens; donations are **not** tracked |
 
-Critical addresses are fixed at `initialize` (no setters in this core).
+Vault role addresses are fixed at `initialize` (no setters on AccretiveIndex).
 
 ## Roles & access control
 
-- Custom errors; no OZ AccessControl in this contract (role = address equality).
-- Implementation constructor calls `_disableInitializers()` so the impl cannot be initialized.
-- Clones must be initialized exactly once.
+- **IndexFactory:** OZ `AccessControl` + `onlyLauncher` on `createIndex`.
+- **AccretiveIndex / AccretionEngine:** address equality; impl constructors call `_disableInitializers()`.
+- Clones must be initialized exactly once (factory does this atomically in `createIndex`).
 
 ## Hard invariants
 
 1. `trackedBalance[i] <= raw balanceOf(vault, i)` after successful state-changing ops.
-2. `depositAccretion` never increases `totalSupply`.
+2. `depositAccretion` / `harvest` never increase `totalSupply`.
 3. Only `seed` / `mintExactShares` / `redeem` / `depositAccretion` / `syncLoss` mutate tracked.
 4. `syncLoss` never increases tracked.
 5. Untracked donations never become tracked automatically.
 6. In-kind redeem does not read an oracle or DEX.
+7. `createIndex` is launcher-only.
 
-## Unsupported tokens
+## Unsupported tokens / FoT policy
 
-- Fee-on-transfer / deflationary tokens
-- Rebasing tokens
-- Tokens that fee or fail on `transfer`/`transferFrom` in non-standard ways
-- Tokens with callbacks that attempt reentrancy (mitigated by `nonReentrant`, but economic grief still possible)
-
-**Assumption:** upstream Factory registry only approves standard ERC-20 constituents (B20 test assets on Sepolia).
+- Fee-on-transfer / deflationary / rebasing / non-standard ERC-20s are **unsupported**.
+- **Registry policy (IndexFactory):** guardian MUST NOT `approveAsset` FoT tokens. Rejection is **policy-level**, not an on-chain transfer probe (MVP). Documented on `approveAsset` NatSpec.
 
 ## Asset-flow safety
 
-- `SafeERC20` for all constituent pulls/sends
-- `nonReentrant` on `seed`, `mintExactShares`, `redeem`, `depositAccretion`, `syncLoss`
-- Checks-effects-interactions ordering within those constraints
+- `SafeERC20` / `forceApprove` for pulls, sends, and adapter/index allowances
+- `nonReentrant` on vault mutators and `harvest`
 - Mint path assumes full `required` amount arrives (no FoT reconciliation)
+- Harvest leftovers (constituents + USDC dust) remain in the engine by design
 
 ## Reserved flags
 
-- `mintPaused` — enforced on mint; **no setter** (future guardian/factory)
+- `mintPaused` — enforced on mint; **no setter** on vault (future guardian/factory)
 - `closed` — storage only; **no behavior/setter** yet
 
-## Future risks (out of scope here)
+## Future risks (partially out of scope)
 
-- Malicious or compromised `accretionEngine` / `launcher`
-- B20 seize / blacklist → requires `syncLoss` + careful off-chain response
-- Hook / harvest economic attacks in the wider system
-- Clone initialization front-running if factory does not atomic-init
+- Malicious/compromised launcher, guardian, or swap adapter
+- Production adapter allowlist / unlock callback (interface only today)
+- B20 seize / blacklist → `syncLoss` + off-chain response
+- Hook / sweep economic attacks (hook not implemented)
+- Clone init front-running if a non-factory deployer clones without atomic init
 
-## What this audit surface is not
+## What this audit surface still excludes
 
-This package does not include Factory, Launcher, Hook, Zap, Adapter, or Engine. Integration risk lives in those contracts.
+Launcher, ZapRouter, production UniswapV4SwapAdapter, IndexFeeHook, SqrtPriceLib, Sepolia integration scripts.

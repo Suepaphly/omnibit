@@ -1,48 +1,69 @@
-# Architecture — AccretiveIndex in the future Omnibit system
+# Architecture — Omnibit Index Forge (current phase)
 
-This repository currently ships **only** `AccretiveIndex`. The components below are documented for placement; they are **not implemented** here.
+## Implemented now
 
-## System diagram (target)
+| Component | Path | Role |
+|-----------|------|------|
+| **AccretiveIndex** | `src/core/AccretiveIndex.sol` | Share token + custody + tracked ledger |
+| **IndexFactory** | `src/core/IndexFactory.sol` | Asset registry; clones index + engine; `onlyLauncher` create |
+| **AccretionEngine** | `src/accretion/AccretionEngine.sol` | USDC hold; harvest at launch weights; worst-leg depositAccretion |
+| **NavLib** | `src/libs/NavLib.sol` | WAD NAV from tracked + 8-dec feeds |
+| **MockPriceFeed** | `src/testnet/MockPriceFeed.sol` | AggregatorV3 mock |
+| **IUniswapV4SwapAdapter** | `src/periphery/interfaces/…` | Exact-in swap surface (mock in tests) |
+
+## System diagram (target vs done)
 
 ```
 Creator
-  └─ IndexLauncher.createSeed
-       ├─ IndexFactory.createIndex → clone AccretiveIndex + AccretionEngine
-       ├─ IndexZapRouter / UniswapV4SwapAdapter → buy basket with USDC
-       └─ AccretiveIndex.seed (fee-free mint)
+  └─ IndexLauncher.createSeed          ← NOT IMPLEMENTED
+       ├─ IndexFactory.createIndex     ← DONE (clones + init + registry)
+       ├─ Zap / SwapAdapter buy basket ← NOT IMPLEMENTED (interface + MockSwapAdapter only)
+       └─ AccretiveIndex.seed          ← DONE (vault)
 
-  └─ IndexLauncher.initializeMarket
-       ├─ IndexFeeHook.register(PoolId)
-       └─ Uniswap V4 PoolManager.initialize(AI2/USDC) + LP seed
+  └─ IndexLauncher.initializeMarket    ← NOT IMPLEMENTED
+       ├─ IndexFeeHook.register        ← NOT IMPLEMENTED
+       └─ V4 PoolManager.initialize    ← NOT IMPLEMENTED
 
 Live loop
-  ├─ mintExactShares / Zap USDC→basket→mint
-  ├─ redeem (in-kind)
-  ├─ V4 swaps → IndexFeeHook (USDC protocol fee) + LP fee in pool
-  ├─ sweepFees → 50% protocolTreasury USDC / remainder AccretionEngine
-  └─ AccretionEngine.harvest → buy at launch weights → depositAccretion (zero shares)
+  ├─ mintExactShares / redeem          ← DONE
+  ├─ V4 swaps → IndexFeeHook           ← NOT IMPLEMENTED
+  ├─ sweepFees → treasury / engine     ← NOT IMPLEMENTED
+  └─ AccretionEngine.harvest           ← DONE (unit-tested w/ MockSwapAdapter)
+       └─ depositAccretion (0 shares)  ← DONE
 ```
 
-## Component placement
+## Factory wiring
 
-| Component | Role vs AccretiveIndex |
-|-----------|-------------------------|
-| **IndexFactory** | Approves constituents; clones index + engine; calls `initialize`; `onlyLauncher` create. |
-| **IndexLauncher** | Sole caller of `seed`; two-tx launch; owns hook register + pool init. |
-| **AccretionEngine** | Sole caller of `depositAccretion`; holds swept USDC; harvest buys legs. |
-| **IndexZapRouter** | Convenience USDC→basket→`mintExactShares`; never bypasses vault solvency. |
-| **UniswapV4SwapAdapter** | Allowlisted exact-in swaps for launch/harvest; not used by redeem. |
-| **IndexFeeHook** | Global V4 hook; USDC protocol fee; does not mint/burn index shares. |
-| **protocolTreasury** | Receives mint/redeem **share** fees and swept USDC half. |
-| **Constituents (B20)** | ERC-20 assets in the vault; tracked via ledger, not raw donations. |
+1. Guardian `approveAsset(asset, priceFeed)` — **policy: no FoT tokens**
+2. Launcher `createIndex({name, symbol, constituents, initialWeightsBps, creator})`
+3. Factory clones index impl + engine impl
+4. `AccretiveIndex.initialize(..., factory, launcher, engine, treasury, 10, 10)`
+5. `AccretionEngine.initialize(index, factory, usdc, swapAdapter, launchWeightsBps)`
+6. Registry: `isIndex`, `isEngine`, `engineOf[index]`, `_indexes[]`
 
-## Trust boundaries (core)
+`isEngine` is the allowlist hook for a future production adapter (“registers the new engine as an allowed adapter caller”).
 
-- **Untrusted:** any EOA calling `mintExactShares`, `redeem`, `syncLoss`, or transferring tokens into the vault.
-- **Trusted roles (set at init):** `launcher`, `accretionEngine`, `protocolTreasury`, `factory` address (informational in this core).
-- **Vault math:** in-kind only; no price feed in mint/redeem paths.
+## Harvest / worst-leg
 
-## Storage reserved for later control
+```
+usdcFor[i]  = mulDiv(engineUsdc, launchWeightBps[i], 10_000)
+bought[i]   = adapter.swapExactInput(USDC, asset[i], usdcFor[i], minOut[i], deadline)
+scale       = min_i (bought[i] * WAD / tracked[i])   // tracked[i] > 0
+recognized  = tracked[i] * scale / WAD                 // capped ≤ bought[i]
+index.depositAccretion(recognized)                     // ZERO mint; leftovers stay in engine
+```
 
-- `mintPaused` — when true, `mintExactShares` reverts. No setter here.
-- `closed` — reserved for wind-down. No behavior/setter here.
+Launch weights (e.g. 50/50) are the **spend** target. Recognition follows **live tracked proportions**. Vault mix may drift; there is no `rebalance()` in MVP.
+
+## Trust boundaries
+
+- **Untrusted:** EOAs calling mint/redeem/syncLoss/harvest; raw donations
+- **Trusted:** factory admin/guardian, launcher, configured treasury, swap adapter (when set)
+- **Vault math:** in-kind only; no price feed on mint/redeem
+- **NAV feeds:** display / future zap·harvest gating only — never redeem rights
+
+## Still not implemented
+
+- `IndexLauncher`, `IndexZapRouter`, production `UniswapV4SwapAdapter`, `IndexFeeHook`, `SqrtPriceLib`
+- Sepolia deploy/launch/demo scripts
+- Writing `cumulativeAccretedUsdWad` from harvest (storage reserved on vault; engine does not update it yet)

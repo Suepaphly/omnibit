@@ -1,101 +1,89 @@
-# Omnibit Index Forge — AccretiveIndex Core
+# Omnibit Index Forge — AccretiveIndex + Factory + AccretionEngine
 
-Solidity `^0.8.26` Foundry project implementing **only** the `AccretiveIndex` vault/share token for Omnibit Index Forge (Base Sepolia MVP).
+Solidity `^0.8.26` Foundry project for Omnibit Index Forge (Base Sepolia MVP).
 
-> **Scope:** `AccretiveIndex` core only. Factory, Launcher, Uniswap V4 hook, ZapRouter, swap adapter, and AccretionEngine are **not** implemented here.
+> **This phase:** `AccretiveIndex`, `IndexFactory`, `AccretionEngine`, `NavLib`, `MockPriceFeed`, and `IUniswapV4SwapAdapter` (+ test mock).
+> **Not yet:** `IndexLauncher`, `IndexZapRouter`, production `UniswapV4SwapAdapter`, `IndexFeeHook`, `SqrtPriceLib`.
 
 ## Product model
 
-Each `AccretiveIndex` clone is:
+Each factory-created index is a pair:
 
-1. An **ERC-20 index share** (18 decimals)
-2. A **custody vault** for constituent ERC-20s
-3. A **recognized-backing ledger** (`trackedBalance`)
+1. **AccretiveIndex** — ERC-20 share (18 dec) + custody vault + `trackedBalance` ledger
+2. **AccretionEngine** — holds swept USDC; `harvest` buys at **launch weights** and `depositAccretion`s with **zero new shares**
 
 **Key invariant:** `backing per share[i] = trackedBalance[i] / totalSupply`.
 
-**Accretion** deposits constituents **without minting**, so backing per share rises while `totalSupply` stays unchanged.
+**Accretion** increases tracked without minting → backing/share rises, `totalSupply` unchanged.
 
 ## Tracked vs raw
 
 | Concept | Meaning |
 |--------|---------|
 | **Raw balance** | `IERC20(asset).balanceOf(vault)` |
-| **Recognized backing (`trackedBalance`)** | Protocol ledger used for mint/redeem/accretion math |
+| **Recognized backing (`trackedBalance`)** | Protocol ledger for mint/redeem/accretion |
 
-Direct ERC-20 transfers into the vault (**untracked donations**) do **not** become backing. Only these functions mutate `trackedBalance`:
+Direct ERC-20 donations do **not** become backing. Writers: `seed`, `mintExactShares`, `redeem`, `depositAccretion`, `syncLoss` (decrease only).
 
-- `seed`
-- `mintExactShares`
-- `redeem`
-- `depositAccretion`
-- `syncLoss` (decrease only)
+## IndexFactory
 
-After every successful state-changing op: `trackedBalance[asset] <= raw balance`.
+- OZ `Clones` of index + engine implementations
+- `createIndex(CreateIndexParams)` — **onlyLauncher**; N ∈ [2,8]; equal-length arrays; no dups; every constituent **approved**; weights sum to 10_000
+- Initializes both clones: fees 10/10 bps, factory/launcher/engine/treasury wiring, launch weights on engine
+- Registry: `isIndex`, `isEngine`, `engineOf`, `indexes()`
+- Guardian-only: `approveAsset` / `setPriceFeed` / `revokeAsset`
+- **FoT policy:** fee-on-transfer assets are rejected at **registry policy** (guardian MUST NOT approve FoT). No on-chain FoT probe in MVP.
 
-## Flows
+## AccretionEngine
 
-### Seed (launcher-only, once, fee-free)
+- Clone-ready `Initializable`; constructor `_disableInitializers`
+- Holds USDC; linked to one index; stores `launchWeightsBps`
+- `harvest(minOut[], deadline)` — permissionless:
+  1. Split engine USDC by launch weights
+  2. Buy each leg via `IUniswapV4SwapAdapter.swapExactInput`
+  3. Worst-leg recognize vs current `tracked` proportions
+  4. `depositAccretion(recognized)` — **must mint zero shares**; leftovers stay in engine
 
-Pulls constituent amounts from the launcher, sets `trackedBalance`, mints `initialGrossShares` to `lpReceiver`. Treasury gets **0** fee shares.
+## NavLib / MockPriceFeed
 
-### Mint (`mintExactShares`)
+- `NavLib`: WAD NAV helpers from tracked amounts + 8-dec feed answers
+- `MockPriceFeed`: AggregatorV3-compatible mock (`decimals = 8`)
 
-```
-requiredAsset[i] = mulDiv(tracked[i], grossShares, totalSupplyBefore, Ceil)
-feeShares        = floor(grossShares * mintFeeBps / 10_000)
-userShares       = grossShares - feeShares
-```
+## Fees & rounding (vault)
 
-Pulls assets from caller, increases tracked by recognized amounts, mints user shares to `receiver` and fee shares to `protocolTreasury`. Reverts if `!seeded` or `mintPaused`.
-
-### Redeem
-
-```
-feeShares    = floor(sharesIn * redeemFeeBps / 10_000)
-redeemShares = sharesIn - feeShares
-assetOut[i]  = mulDiv(tracked[i], redeemShares, totalSupplyBefore, Floor)
-```
-
-Transfers fee shares to treasury, burns `redeemShares`, reduces tracked, sends constituents. Works while `mintPaused`. No oracle/DEX.
-
-### Accretion (`depositAccretion`)
-
-AccretionEngine-only. Pulls amounts, `+= tracked` and `+= cumulativeAccretedRaw`. **Never mints.** `cumulativeAccretedUsdWad` is **not** updated in this core (no oracle).
-
-### syncLoss
-
-Permissionless. If `raw < tracked`, set `tracked = raw`. Never increases. Donations never become tracked.
-
-## Fees & rounding
-
-- Mint/redeem fees are paid in **index shares** to `protocolTreasury` (fully backed), never USDC.
-- Mint required amounts use **Ceil**; redeem outputs use **Floor**.
-- `previewMint` / `previewRedeem` share the same internal helpers as the state-changing paths (no drift).
+- Mint/redeem fees in **index shares** to `protocolTreasury` (never USDC)
+- Mint required: **Ceil**; redeem out: **Floor**
+- Hook fee / sweep path is **not** in this phase
 
 ## Security assumptions
 
-- Constituents are standard ERC-20s: **no fee-on-transfer**, no rebasing, no weird callbacks that break CEI beyond `nonReentrant` + `SafeERC20`.
-- Upstream registry (future Factory) approves assets; this vault does not validate token behavior at runtime.
-- Roles (`launcher`, `accretionEngine`, `protocolTreasury`, `factory`) are trusted as configured at `initialize`.
-- `mintPaused` / `closed` are **storage-reserved**; this contract has **no setters** (future factory/guardian).
-- **UNAUDITED.**
+- Constituents: standard ERC-20, **no FoT** (enforced by factory guardian policy)
+- Roles trusted as configured at init / factory admin
+- `mintPaused` / `closed` still storage-reserved on the vault (no setters here)
+- **UNAUDITED**
 
-## NOT implemented
+## NOT implemented (remaining MVP gaps)
 
-- `IndexFactory`, `IndexLauncher`, `IndexZapRouter`, `UniswapV4SwapAdapter`, `IndexFeeHook`, `AccretionEngine`
-- Oracle update of `cumulativeAccretedUsdWad`
-- Governance, rebalance, oracle-based redemption
-- UUPS upgrades beyond clone `initialize`
+| Component | Status |
+|-----------|--------|
+| `IndexLauncher` (createSeed + initializeMarket) | Not started |
+| `IndexZapRouter` | Not started |
+| Production `UniswapV4SwapAdapter` | Interface + test mock only |
+| `IndexFeeHook` + CREATE2 mine | Not started |
+| `SqrtPriceLib` | Not started |
+| Sepolia B20 / V4 integration scripts | Not started |
+| Oracle write to `cumulativeAccretedUsdWad` | Reserved / unused |
 
 ## Layout
 
 ```
-src/core/AccretiveIndex.sol
-test/unit/AccretiveIndex.t.sol
-test/fuzz/AccretiveIndex.fuzz.t.sol
-test/invariant/AccretiveIndex.invariant.t.sol
-test/mocks/MockERC20.sol
+src/core/AccretiveIndex.sol IndexFactory.sol
+src/accretion/AccretionEngine.sol
+src/libs/NavLib.sol
+src/testnet/MockPriceFeed.sol
+src/periphery/interfaces/IUniswapV4SwapAdapter.sol
+test/unit/ … Factory / Engine / NavLib / AccretiveIndex
+test/mocks/MockERC20.sol MockSwapAdapter.sol
 docs/{ARCHITECTURE,ACCOUNTING,SECURITY,GLOSSARY}.md
 ```
 
@@ -107,13 +95,11 @@ cd /workspace/omnibit
 forge fmt
 forge build
 forge test -vvv
-# optional:
-forge test --gas-report
 ```
 
 ## Dependencies
 
-- OpenZeppelin Contracts + Upgradeable (Clones, Initializable ERC20, ReentrancyGuard, SafeERC20, Math)
+- OpenZeppelin Contracts + Upgradeable (Clones, Initializable ERC20, AccessControl, ReentrancyGuard, SafeERC20, Math)
 - forge-std
 
 ## License
