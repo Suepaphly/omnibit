@@ -1,0 +1,33 @@
+# Glossary (Omnibit-specific)
+
+- **Accretion** — Depositing constituent tokens into an AccretiveIndex vault as recognized backing **without minting** new index shares, raising backing per share.
+- **AccretionEngine** — Per-index clone that spends swept USDC at launch weights, buys constituents, prices recognized amounts via factory feeds + NavLib, and calls `depositAccretion`.
+- **AccretiveIndex** — Cloneable ERC-20 index share + custody vault + recognized-backing ledger.
+- **Backing** — Constituent amounts recognized in `trackedBalance` that back index shares.
+- **Backing per share** — `trackedBalance[i] / totalSupply` for each constituent `i`.
+- **B20** — Base Native Token Standard assets; MVP uses synthetic test B20s (tNVDA, tMSFT).
+- **Constituent** — An approved ERC-20 in the index basket (2–8 unique nonzero addresses).
+- **cumulativeAccretedRaw** — Lifetime raw constituent units recognized via `depositAccretion` per asset.
+- **cumulativeAccretedUsdWad** — Lifetime USD-WAD of recognized accretion for UI/NAV; updated when the engine passes `usdWadIncrement` on `depositAccretion`.
+- **Gross shares** — Full share amount requested on mint/seed before fee split (`userShares + feeShares` on mint).
+- **Index AI2** — Reference MVP index: 50% tNVDA / 50% tMSFT at launch weights.
+- **Index share** — The ERC-20 (`AI2`) representing a pro-rata claim on tracked constituents.
+- **In-kind mint** — Minting shares by depositing the current tracked basket (ceil pro-rata), not USDC inside this contract.
+- **In-kind redeem** — Burning shares for floor pro-rata constituents; no oracle/DEX.
+- **Launch weights** — Initial bps weights used by launcher/harvest buys (e.g. 5000/5000). Live mint ratios follow **current tracked**, not launch weights.
+- **Mint fee** — `mintFeeBps` share fee minted to `protocolTreasury` on `mintExactShares`.
+- **NAV** — Net asset value (USD-WAD elsewhere); redeem rights do **not** depend on NAV in this core.
+- **Protocol treasury** — Address receiving mint/redeem share fees (and, in the wider system, swept USDC).
+- **Raw balance** — Actual `balanceOf` of a constituent held by the vault.
+- **Recognized backing** — `trackedBalance`; the only balances that mint/redeem math uses.
+- **Redeem fee** — `redeemFeeBps` share fee transferred to treasury on redeem; remainder is `redeemShares`.
+- **redeemShares** — `sharesIn - feeShares`; the burned amount that determines assetOut.
+- **Seed** — One-shot launcher funding that sets initial tracked balances and mints fee-free gross shares.
+- **Share dilution** — Reduction in backing per share from minting without proportional assets; prevented by ceil mint deposits.
+- **syncLoss** — Permissionless repair setting `tracked = raw` when raw falls; never increases tracked.
+- **totalSupply** — ERC-20 supply of index shares; unchanged by accretion.
+- **trackedBalance** — Per-asset recognized backing ledger.
+- **Untracked donation** — ERC-20 sent to the vault without going through seed/mint/accretion; ignored by accounting.
+- **Vault** — The AccretiveIndex contract address holding constituent tokens.
+- **WAD** — 1e18 fixed-point scale used for USD/NAV displays elsewhere.
+- **Basis point / bps** — 1 bps = 0.01% = 1 / 10_000.
