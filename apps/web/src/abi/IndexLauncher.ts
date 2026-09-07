@@ -59,6 +59,11 @@ export const IndexLauncherAbi = [
         "type": "uint256",
         "internalType": "uint256"
       },
+            {
+        "name": "minAmountsOut",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
       {
         "name": "deadline",
         "type": "uint256",
