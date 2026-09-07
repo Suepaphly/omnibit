@@ -21,8 +21,8 @@ export default function LaunchPage() {
   const { address } = useAccount();
   const [name, setName] = useState('Index AI2');
   const [symbol, setSymbol] = useState('AI2');
-  const [backingUsdc, setBackingUsdc] = useState('1000');
-  const [lpUsdc, setLpUsdc] = useState('50');
+  const [backingUsdc, setBackingUsdc] = useState('2');
+  const [lpUsdc, setLpUsdc] = useState('1');
   const [indexOverride, setIndexOverride] = useState('');
   const [showAddrs, setShowAddrs] = useState(false);
 

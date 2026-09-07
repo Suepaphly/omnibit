@@ -9,21 +9,22 @@ const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? '';
 const connectors = [
   injected({ shimDisconnect: true }),
   coinbaseWallet({ appName: 'Omnibit Index Forge', preference: 'all' }),
-  ...(projectId
-    ? [
-        walletConnect({
-          projectId,
-          metadata: {
-            name: 'Omnibit Index Forge',
-            description: 'Base Sepolia MVP console',
-            url: 'https://omnibit.local',
-            icons: [],
-          },
-          showQrModal: true,
-        }),
-      ]
-    : []),
 ];
+
+if (typeof window !== 'undefined' && projectId) {
+  connectors.push(
+    walletConnect({
+      projectId,
+      metadata: {
+        name: 'Omnibit Index Forge',
+        description: 'Base Sepolia MVP console',
+        url: 'https://omnibit-six.vercel.app',
+        icons: [],
+      },
+      showQrModal: true,
+    }),
+  );
+}
 
 export const wagmiConfig = createConfig({
   chains: [baseSepolia],
