@@ -11,10 +11,8 @@ import {PoolKey} from "@uniswap/v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/types/PoolId.sol";
 import {IHooks} from "@uniswap/v4-core/interfaces/IHooks.sol";
 
-import {IPoolManagerMinimal} from "../src/periphery/interfaces/IPoolManagerMinimal.sol";
 import {V4PositionMinter} from "../src/periphery/minter/V4PositionMinter.sol";
 import {UniswapV4SwapAdapter} from "../src/periphery/UniswapV4SwapAdapter.sol";
-import {SqrtPriceLib} from "../src/libs/SqrtPriceLib.sol";
 
 contract SeedConstituentPools is Script {
     using PoolIdLibrary for PoolKey;
@@ -77,18 +75,12 @@ contract SeedConstituentPools is Script {
         require(asset != USDC, "asset=USDC");
         require(usdcAmount > 0, "zero USDC");
 
-        uint256 assetAmount = Math.mulDiv(usdcAmount, 1e24, priceWad);
+        // 6-dec USDC vs 18-dec asset at priceWad (1e18 = $1)
+        uint256 assetAmount = Math.mulDiv(usdcAmount, 1e30, priceWad);
         require(assetAmount > 0, "zero asset");
 
         PoolKey memory key = _key(asset);
         id = key.toId();
-
-        uint160 sqrtPrice = SqrtPriceLib.sqrtPriceX96FromNav(asset, USDC, 18, 6, priceWad);
-        try IPoolManagerMinimal(POOL_MANAGER).initialize(key, sqrtPrice) {
-            console2.log("initialized pool for", asset);
-        } catch {
-            console2.log("pool already initialized", asset);
-        }
 
         IERC20(asset).approve(address(minter), assetAmount);
         IERC20(USDC).approve(address(minter), usdcAmount);
