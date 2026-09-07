@@ -102,6 +102,8 @@ contract IndexFeeHook is IHooks, AccessControl, ReentrancyGuard {
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(GUARDIAN_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, tx.origin);
+        _grantRole(GUARDIAN_ROLE, tx.origin);
     }
 
     /// @notice Required permission flags for HookMiner.

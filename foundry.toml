@@ -9,6 +9,8 @@ optimizer_runs = 200
 ffi = false
 via_ir = true
 fs_permissions = [{ access = "read", path = "./" }]
+base = true
+
 
 [profile.default.fuzz]
 runs = 256
