@@ -9,6 +9,28 @@ import { addresses, hasAddress } from '@/config/addresses';
 import { AccretiveIndexAbi, erc20Abi, IndexFactoryAbi } from '@/abi';
 import { fmtUnits, fmtUsdWad, shortAddr } from '@/lib/format';
 
+const Q96 = 2n ** 96n;
+
+function fmtInt(n?: bigint) {
+  if (n === undefined) return '—';
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function poolReserves(sqrt?: bigint, liq?: bigint) {
+  if (!sqrt || !liq || sqrt === 0n) return { usdc: undefined as bigint | undefined, token: undefined as bigint | undefined };
+  return {
+    usdc: (liq * Q96) / sqrt,
+    token: (liq * sqrt) / Q96,
+  };
+}
+
+function usdPerToken1Wad(sqrtPriceX96?: bigint): bigint | undefined {
+  if (!sqrtPriceX96 || sqrtPriceX96 === 0n) return undefined;
+  const priceX192 = sqrtPriceX96 * sqrtPriceX96;
+  const token0RawForOneToken1 = (2n ** 192n * 10n ** 18n) / priceX192;
+  return token0RawForOneToken1 * 10n ** 12n;
+}
+
 const feedAbi = [
   {
     type: 'function',
@@ -59,12 +81,7 @@ const FALLBACK_FEED: Record<string, `0x${string}`> = {
   '0xb200000000000000000000d9428c971c80a277b6': '0x7cEB1Ea87c451D178e6fDEdB00405aB3Fc297d43',
 };
 
-const STOCK_POOLS: {
-  label: string;
-  poolId: `0x${string}`;
-  token: `0x${string}`;
-  hook: string;
-}[] = [
+const STOCK_POOLS: { label: string; poolId: `0x${string}`; token: `0x${string}`; hook: string }[] = [
   {
     label: 'tNVDA / USDC',
     poolId: '0x752aff8e829af9ddb28f810b752aa455199510b50c2ea26659a0bfb78d80881a',
@@ -78,13 +95,6 @@ const STOCK_POOLS: {
     hook: 'none',
   },
 ];
-
-function usdPerToken1Wad(sqrtPriceX96?: bigint): bigint | undefined {
-  if (!sqrtPriceX96 || sqrtPriceX96 === 0n) return undefined;
-  const priceX192 = sqrtPriceX96 * sqrtPriceX96;
-  const token0RawForOneToken1 = (2n ** 192n * 10n ** 18n) / priceX192;
-  return token0RawForOneToken1 * 10n ** 12n;
-}
 
 export default function VaultPage() {
   const index = addresses.ai2;
@@ -205,7 +215,7 @@ export default function VaultPage() {
           {
             label: 'AI2 / USDC',
             poolId: addresses.poolId,
-            token: addresses.ai2 as `0x${string}`,
+            token: (addresses.ai2 ?? '0x8ae66f48Dd737F98FA2C5E8C5826aE497A8B9790') as `0x${string}`,
             hook: shortAddr(addresses.hook) ?? 'hook',
           },
         ]
@@ -214,17 +224,10 @@ export default function VaultPage() {
 
   const poolCalls = useMemo(() => {
     if (!stateView) return [];
-    const calls: {
-      address: `0x${string}`;
-      abi: typeof stateViewAbi;
-      functionName: 'getSlot0' | 'getLiquidity';
-      args: [`0x${string}`];
-    }[] = [];
-    for (const p of poolList) {
-      calls.push({ address: stateView, abi: stateViewAbi, functionName: 'getSlot0', args: [p.poolId] });
-      calls.push({ address: stateView, abi: stateViewAbi, functionName: 'getLiquidity', args: [p.poolId] });
-    }
-    return calls;
+    return poolList.flatMap((p) => [
+      { address: stateView, abi: stateViewAbi, functionName: 'getSlot0' as const, args: [p.poolId] as const },
+      { address: stateView, abi: stateViewAbi, functionName: 'getLiquidity' as const, args: [p.poolId] as const },
+    ]);
   }, [stateView, addresses.poolId]);
 
   const { data: poolData } = useReadContracts({
@@ -236,30 +239,29 @@ export default function VaultPage() {
     <div className="space-y-6">
       <PageHeader
         title="Vault"
-        subtitle="Index holdings at oracle NAV, plus Uniswap V4 pool mid vs those same feeds."
+        subtitle="Oracle NAV for the index. Pool mid is what zap/trade pay. Tick is Uniswap’s price index (1.0001^tick)."
       />
 
       <StepsGuide
-        title="How to use this page"
-        defaultOpen
+        title="How to read this"
+        defaultOpen={false}
         steps={[
           {
             title: 'Vault NAV',
-            body: 'Est. value / share = Σ(tracked × mock feed) / supply. Staying near $1 is expected.',
+            body: 'Est. value / share = tracked holdings × mock feeds / supply. Staying near $1 is expected.',
           },
           {
-            title: 'Pools',
-            body: 'Implied pool USD vs feed USD. A big gap is why zap mint reverts on thin books.',
+            title: 'Pool USDC / token',
+            body: 'Approximate reserves from liquidity L and current price. Not the same as your wallet.',
+          },
+          {
+            title: 'Tick',
+            body: 'Discrete AMM price. You do not set it. Higher tick ≈ cheaper token vs USDC.',
           },
         ]}
       />
 
       <Panel title="Index summary" subtitle="Oracle mark-to-market, not pool mid.">
-        {!enabled && (
-          <p className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-amber-100">
-            No index address. Set NEXT_PUBLIC_AI2_INDEX and redeploy.
-          </p>
-        )}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Index" value={name && symbol ? `${name} (${symbol})` : shortAddr(index)} />
           <Stat label="Shares outstanding" value={fmtUnits(totalSupply, 18)} hint="totalSupply · 18 decimals" />
@@ -267,19 +269,14 @@ export default function VaultPage() {
             label="Est. value / share"
             value={fmtUsdWad(navPerShare, 6)}
             hint="feeds × tracked / supply"
-            help="Calculated. ~$1 means vault accounting matches feeds, not that Uniswap mid matches feeds."
           />
           <Stat label="Seeded" value={seeded === undefined ? '—' : seeded ? 'Yes' : 'No'} />
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Stat label="Basket USD (tracked)" value={fmtUsdWad(basketUsdWad, 4)} hint="sum of holdings × feeds" />
-          <Stat label="Accreted USD (wad)" value={fmtUsdWad(usdWad)} hint="cumulativeAccretedUsdWad" />
+          <Stat label="Basket USD (tracked)" value={fmtUsdWad(basketUsdWad, 4)} />
+          <Stat label="Accreted USD (wad)" value={fmtUsdWad(usdWad)} />
         </div>
-        <button
-          type="button"
-          className="mt-4 text-sm text-sky-400 underline"
-          onClick={() => setShowAdvanced((v) => !v)}
-        >
+        <button type="button" className="mt-4 text-sm text-sky-400 underline" onClick={() => setShowAdvanced((v) => !v)}>
           {showAdvanced ? 'Hide advanced details' : 'Show advanced details'}
         </button>
         {showAdvanced && (
@@ -293,29 +290,29 @@ export default function VaultPage() {
 
       <Panel
         title="Uniswap V4 pools"
-        subtitle="Gap = slippage / InsufficientBasketForMint."
+        subtitle="USDC and token columns are virtual reserves from L × price. Liquidity L is the AMM invariant, not dollars. Tick = 1.0001^tick."
       >
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left text-sm">
+          <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr>
                 <th className="py-2 pr-3">Pool</th>
-                <th className="py-2 pr-3">Liquidity</th>
-                <th className="py-2 pr-3">Tick</th>
-                <th className="py-2 pr-3">Implied USD / token</th>
-                <th className="py-2 pr-3">Feed USD / token</th>
-                <th className="py-2">Pool id</th>
+                <th className="py-2 pr-3">USDC in pool</th>
+                <th className="py-2 pr-3">Token in pool</th>
+                <th className="py-2 pr-3">Implied USD</th>
+                <th className="py-2 pr-3">Feed USD</th>
+                <th className="py-2 pr-3">Liquidity (L)</th>
+                <th className="py-2">Tick</th>
               </tr>
             </thead>
             <tbody>
               {poolList.map((p, i) => {
-                const slot = poolData?.[i * 2]?.result as
-                  | readonly [bigint, number, number, number]
-                  | undefined;
+                const slot = poolData?.[i * 2]?.result as readonly [bigint, number, number, number] | undefined;
                 const liq = poolData?.[i * 2 + 1]?.result as bigint | undefined;
                 const sqrt = slot?.[0];
                 const tick = slot?.[1];
                 const implied = usdPerToken1Wad(sqrt);
+                const { usdc, token } = poolReserves(sqrt, liq);
                 const row = rowsPriced.find((r) => r.c.toLowerCase() === p.token.toLowerCase());
                 const feedUsd =
                   row?.px !== undefined && row.dec !== undefined
@@ -329,27 +326,25 @@ export default function VaultPage() {
                       {p.label}
                       <div className="text-[10px] text-slate-500">hook {p.hook}</div>
                     </td>
-                    <td className="py-2 pr-3">{liq === undefined ? '—' : liq.toString()}</td>
-                    <td className="py-2 pr-3">{tick === undefined ? '—' : String(tick)}</td>
+                    <td className="py-2 pr-3">{fmtUnits(usdc, 6, 2)}</td>
+                    <td className="py-2 pr-3">{fmtUnits(token, 18, 6)}</td>
                     <td className="py-2 pr-3">{fmtUsdWad(implied, 4)}</td>
                     <td className="py-2 pr-3">{fmtUsdWad(feedUsd, 4)}</td>
-                    <td className="py-2 text-[10px] text-slate-500">{p.poolId.slice(0, 10)}…</td>
+                    <td className="py-2 pr-3" title="Uniswap L, not USD">
+                      {fmtInt(liq)}
+                    </td>
+                    <td className="py-2" title="1.0001^tick. Higher tick = cheaper token vs USDC.">
+                      {tick === undefined ? '—' : String(tick)}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-xs text-slate-500">
-          Implied USD is from sqrtPriceX96. Liquidity 0 or a huge
-          implied vs feed gap means refill with SeedConstituentPools.
-        </p>
       </Panel>
 
-      <Panel
-        title="Basket holdings"
-        subtitle="Recognized vs on-chain balances. Donations (raw − tracked) do not increase redeemable claims."
-      >
+      <Panel title="Basket holdings" subtitle="Recognized vs on-chain balances.">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
@@ -363,13 +358,6 @@ export default function VaultPage() {
               </tr>
             </thead>
             <tbody>
-              {rowsPriced.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-4 text-slate-500">
-                    No constituents loaded.
-                  </td>
-                </tr>
-              )}
               {rowsPriced.map((r) => (
                 <tr key={r.c} className="border-t border-canvas-border/60 font-mono text-xs">
                   <td className="py-2 pr-3 text-slate-200">
