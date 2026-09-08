@@ -32,15 +32,65 @@ const feedAbi = [
   },
 ] as const;
 
+const stateViewAbi = [
+  {
+    type: 'function',
+    name: 'getSlot0',
+    stateMutability: 'view',
+    inputs: [{ name: 'poolId', type: 'bytes32' }],
+    outputs: [
+      { name: 'sqrtPriceX96', type: 'uint160' },
+      { name: 'tick', type: 'int24' },
+      { name: 'protocolFee', type: 'uint24' },
+      { name: 'lpFee', type: 'uint24' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'getLiquidity',
+    stateMutability: 'view',
+    inputs: [{ name: 'poolId', type: 'bytes32' }],
+    outputs: [{ name: 'liquidity', type: 'uint128' }],
+  },
+] as const;
+
 const FALLBACK_FEED: Record<string, `0x${string}`> = {
   '0xb2000000000000000000007199556a4a08e9a745': '0x597fAD4dA2eA41A65E1Fac60E5c5379D8393cE64',
   '0xb200000000000000000000d9428c971c80a277b6': '0x7cEB1Ea87c451D178e6fDEdB00405aB3Fc297d43',
 };
 
+const STOCK_POOLS: {
+  label: string;
+  poolId: `0x${string}`;
+  token: `0x${string}`;
+  hook: string;
+}[] = [
+  {
+    label: 'tNVDA / USDC',
+    poolId: '0x752aff8e829af9ddb28f810b752aa455199510b50c2ea26659a0bfb78d80881a',
+    token: '0xB2000000000000000000007199556a4A08e9A745',
+    hook: 'none',
+  },
+  {
+    label: 'tMSFT / USDC',
+    poolId: '0x6b09b1a9e55fe47f2aa338726a7ef0c7e75e455ad4a65e94ffe66178529c5d6f',
+    token: '0xb200000000000000000000d9428C971c80a277B6',
+    hook: 'none',
+  },
+];
+
+function usdPerToken1Wad(sqrtPriceX96?: bigint): bigint | undefined {
+  if (!sqrtPriceX96 || sqrtPriceX96 === 0n) return undefined;
+  const priceX192 = sqrtPriceX96 * sqrtPriceX96;
+  const token0RawForOneToken1 = (2n ** 192n * 10n ** 18n) / priceX192;
+  return token0RawForOneToken1 * 10n ** 12n;
+}
+
 export default function VaultPage() {
   const index = addresses.ai2;
   const enabled = hasAddress(index);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const stateView = addresses.stateView;
 
   const { data: meta } = useReadContracts({
     contracts: enabled
@@ -148,11 +198,45 @@ export default function VaultPage() {
       ? (basketUsdWad * 10n ** 18n) / totalSupply
       : undefined;
 
+  const poolList = [
+    ...STOCK_POOLS,
+    ...(addresses.poolId
+      ? [
+          {
+            label: 'AI2 / USDC',
+            poolId: addresses.poolId,
+            token: addresses.ai2 as `0x${string}`,
+            hook: shortAddr(addresses.hook) ?? 'hook',
+          },
+        ]
+      : []),
+  ];
+
+  const poolCalls = useMemo(() => {
+    if (!stateView) return [];
+    const calls: {
+      address: `0x${string}`;
+      abi: typeof stateViewAbi;
+      functionName: 'getSlot0' | 'getLiquidity';
+      args: [`0x${string}`];
+    }[] = [];
+    for (const p of poolList) {
+      calls.push({ address: stateView, abi: stateViewAbi, functionName: 'getSlot0', args: [p.poolId] });
+      calls.push({ address: stateView, abi: stateViewAbi, functionName: 'getLiquidity', args: [p.poolId] });
+    }
+    return calls;
+  }, [stateView, addresses.poolId]);
+
+  const { data: poolData } = useReadContracts({
+    contracts: poolCalls,
+    query: { enabled: poolCalls.length > 0 },
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Vault"
-        subtitle="Read-only view of the index: share supply, mark-to-market value per share, and basket balances."
+        subtitle="Index holdings at oracle NAV, plus Uniswap V4 pool mid vs those same feeds."
       />
 
       <StepsGuide
@@ -160,21 +244,17 @@ export default function VaultPage() {
         defaultOpen
         steps={[
           {
-            title: 'Set the index address',
-            body: 'Requires NEXT_PUBLIC_AI2_INDEX.',
+            title: 'Vault NAV',
+            body: 'Est. value / share = Σ(tracked × mock feed) / supply. Staying near $1 is expected.',
           },
           {
-            title: 'Scan the summary',
-            body: 'Est. value / share = Σ(tracked × mock feed) / totalSupply. Not the old $1 seed heuristic.',
-          },
-          {
-            title: 'Inspect the basket',
-            body: 'Tracked vs raw. Donation = raw − tracked.',
+            title: 'Pools',
+            body: 'Implied pool USD vs feed USD. A big gap is why zap mint reverts on thin books.',
           },
         ]}
       />
 
-      <Panel title="Index summary" subtitle="Vault health. NAV uses mock price feeds.">
+      <Panel title="Index summary" subtitle="Oracle mark-to-market, not pool mid.">
         {!enabled && (
           <p className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-amber-100">
             No index address. Set NEXT_PUBLIC_AI2_INDEX and redeploy.
@@ -185,17 +265,14 @@ export default function VaultPage() {
           <Stat label="Shares outstanding" value={fmtUnits(totalSupply, 18)} hint="totalSupply · 18 decimals" />
           <Stat
             label="Est. value / share"
-            value={fmtUsdWad(navPerShare)}
+            value={fmtUsdWad(navPerShare, 6)}
             hint="feeds × tracked / supply"
-            help="Mark-to-market from mock aggregators. Not $1 + accretion."
+            help="Calculated. ~$1 means vault accounting matches feeds, not that Uniswap mid matches feeds."
           />
-          <Stat
-            label="Seeded"
-            value={seeded === undefined ? '—' : seeded ? 'Yes' : 'No'}
-          />
+          <Stat label="Seeded" value={seeded === undefined ? '—' : seeded ? 'Yes' : 'No'} />
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Stat label="Basket USD (tracked)" value={fmtUsdWad(basketUsdWad)} hint="sum of holdings × feeds" />
+          <Stat label="Basket USD (tracked)" value={fmtUsdWad(basketUsdWad, 4)} hint="sum of holdings × feeds" />
           <Stat label="Accreted USD (wad)" value={fmtUsdWad(usdWad)} hint="cumulativeAccretedUsdWad" />
         </div>
         <button
@@ -212,6 +289,61 @@ export default function VaultPage() {
             <Stat label="Accretion engine" value={shortAddr(engine ?? addresses.engine)} />
           </div>
         )}
+      </Panel>
+
+      <Panel
+        title="Uniswap V4 pools"
+        subtitle="Pool mid is what zap/trade hit. Feed is what the vault uses. Gap = slippage / InsufficientBasketForMint."
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px] text-left text-sm">
+            <thead className="text-xs uppercase text-slate-500">
+              <tr>
+                <th className="py-2 pr-3">Pool</th>
+                <th className="py-2 pr-3">Liquidity</th>
+                <th className="py-2 pr-3">Tick</th>
+                <th className="py-2 pr-3">Implied USD / token</th>
+                <th className="py-2 pr-3">Feed USD / token</th>
+                <th className="py-2">Pool id</th>
+              </tr>
+            </thead>
+            <tbody>
+              {poolList.map((p, i) => {
+                const slot = poolData?.[i * 2]?.result as
+                  | readonly [bigint, number, number, number]
+                  | undefined;
+                const liq = poolData?.[i * 2 + 1]?.result as bigint | undefined;
+                const sqrt = slot?.[0];
+                const tick = slot?.[1];
+                const implied = usdPerToken1Wad(sqrt);
+                const row = rowsPriced.find((r) => r.c.toLowerCase() === p.token.toLowerCase());
+                const feedUsd =
+                  row?.px !== undefined && row.dec !== undefined
+                    ? (row.px * 10n ** 18n) / 10n ** BigInt(row.dec)
+                    : p.label.startsWith('AI2')
+                      ? navPerShare
+                      : undefined;
+                return (
+                  <tr key={p.poolId} className="border-t border-canvas-border/60 font-mono text-xs">
+                    <td className="py-2 pr-3 text-slate-200">
+                      {p.label}
+                      <div className="text-[10px] text-slate-500">hook {p.hook}</div>
+                    </td>
+                    <td className="py-2 pr-3">{liq === undefined ? '—' : liq.toString()}</td>
+                    <td className="py-2 pr-3">{tick === undefined ? '—' : String(tick)}</td>
+                    <td className="py-2 pr-3">{fmtUsdWad(implied, 4)}</td>
+                    <td className="py-2 pr-3">{fmtUsdWad(feedUsd, 4)}</td>
+                    <td className="py-2 text-[10px] text-slate-500">{p.poolId.slice(0, 10)}…</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          currency0 is USDC on these pools. Implied USD is from sqrtPriceX96. Liquidity 0 or a huge
+          implied vs feed gap means refill with SeedConstituentPools, not redeem.
+        </p>
       </Panel>
 
       <Panel
