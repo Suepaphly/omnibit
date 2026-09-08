@@ -22,24 +22,29 @@ export default function MintPage() {
   const index = addresses.ai2;
   const zap = addresses.zap;
   const usdc = addresses.usdc;
-  const [gross, setGross] = useState('10');
-  const [maxUsdc, setMaxUsdc] = useState('50');
-  const [mode, setMode] = useState<'inkind' | 'zap'>('inkind');
+  const [gross, setGross] = useState('0.01');
+  const [usdcSpend, setUsdcSpend] = useState('1');
+  const [mode, setMode] = useState<'inkind' | 'zap'>('zap');
 
-  const grossShares = useMemo(() => {
+  const grossSharesInKind = useMemo(() => {
     try {
       return parseUnits(gross || '0', 18);
     } catch {
       return 0n;
     }
   }, [gross]);
-  const maxUSDC = useMemo(() => {
+
+  const zapUsdc = useMemo(() => {
     try {
-      return parseUnits(maxUsdc || '0', 6);
+      return parseUnits(usdcSpend || '0', 6);
     } catch {
       return 0n;
     }
-  }, [maxUsdc]);
+  }, [usdcSpend]);
+
+  // $1 NAV: 1 USDC (6 dp) → 1 share (18 dp)
+  const zapShares = zapUsdc * 10n ** 12n;
+  const grossShares = mode === 'zap' ? zapShares : grossSharesInKind;
 
   const { data: preview } = useReadContract({
     address: index,
@@ -108,13 +113,13 @@ export default function MintPage() {
   }
 
   function mintZap() {
-    if (!zap || !index || grossShares === 0n) return;
+    if (!zap || !index || zapUsdc === 0n || zapShares === 0n) return;
     reset();
     writeContract({
       address: zap,
       abi: IndexZapRouterAbi,
       functionName: 'mintExactSharesWithUSDC',
-      args: [index, grossShares, maxUSDC, deadlineSeconds()],
+      args: [index, zapShares, zapUsdc, deadlineSeconds()],
     });
   }
 
@@ -131,11 +136,11 @@ export default function MintPage() {
         steps={[
           {
             title: 'Choose a path',
-            body: 'In-kind: you already hold the basket tokens. Zap: pay USDC and the router buys constituents for you.',
+            body: 'Zap: type USDC to spend. In-kind: type shares and deposit tNVDA + tMSFT you already hold.',
           },
           {
-            title: 'Enter how many shares you want',
-            body: 'Gross shares (18 decimals). The preview shows what you’ll receive after the small share fee.',
+            title: 'Preview',
+            body: 'Zap assumes $1 NAV so 1 USDC ≈ 1 share before fees and pool slippage. Extra basket dust is refunded.',
           },
           {
             title: 'Approve spending',
@@ -143,16 +148,13 @@ export default function MintPage() {
           },
           {
             title: 'Confirm mint',
-            body: 'Submit the transaction on Base Sepolia and wait for confirmation.',
+            body: 'Submit on Base Sepolia. On zap, leftover tNVDA/tMSFT (not unused USDC) is refunded.',
           },
         ]}
       />
 
-      <Panel
-        title="Mint shares"
-        subtitle="A small share fee (typically 10 bps) goes to the treasury. Preview before sending."
-      >
-        <div className="mb-4 flex gap-2">
+      <Panel title="Mint shares">
+        <div className="mb-4 flex flex-wrap gap-2">
           <button
             type="button"
             className={mode === 'inkind' ? btnPrimary : btnSecondary}
@@ -170,32 +172,44 @@ export default function MintPage() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <Field
-            label="Shares to mint (gross)"
-            help="Gross share amount before the mint fee. previewMint returns userShares and feeShares."
-          >
-            <input className={inputClass} value={gross} onChange={(e) => setGross(e.target.value)} />
-          </Field>
-          {mode === 'zap' && (
+          {mode === 'inkind' ? (
             <Field
-              label="Max USDC to spend"
-              help="Slippage cap for mintExactSharesWithUSDC — transaction reverts if cost exceeds this."
+              label="Shares to mint (gross)"
+              help="Gross shares before the 10 bps mint fee. You must hold the basket amounts below."
             >
-              <input className={inputClass} value={maxUsdc} onChange={(e) => setMaxUsdc(e.target.value)} />
+              <input className={inputClass} value={gross} onChange={(e) => setGross(e.target.value)} />
+            </Field>
+          ) : (
+            <Field
+              label="USDC to spend"
+              help="Entire amount is split across tNVDA/tMSFT buys. Preview shares assume $1 NAV."
+            >
+              <input className={inputClass} value={usdcSpend} onChange={(e) => setUsdcSpend(e.target.value)} />
             </Field>
           )}
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <Stat label="You receive" value={fmtUnits(userShares)} help="userShares after fee from previewMint." />
+          <Stat
+            label="You receive (preview)"
+            value={fmtUnits(userShares)}
+            help="userShares after fee from previewMint. Zap slippage can change this."
+          />
           <Stat
             label="Share fee"
             value={fmtUnits(feeShares)}
             hint="~10 bps"
-            help="feeShares — typically 10 basis points (0.10%) of gross shares to treasury."
+            help="Typically 10 bps of gross shares to treasury."
           />
           <Stat label="Index" value={shortAddr(index)} />
         </div>
+
+        {mode === 'zap' && (
+          <p className="mt-3 text-xs text-slate-500">
+            Spending {usdcSpend || '0'} USDC requests ~{usdcSpend || '0'} shares at $1 NAV. The router
+            spends this USDC in the stock pools; leftover tNVDA/tMSFT returns to your wallet.
+          </p>
+        )}
 
         {required && constituents && (
           <div className="mt-4 overflow-x-auto">
@@ -241,9 +255,6 @@ export default function MintPage() {
                 Mint with USDC
               </button>
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">
-              Zap = IndexZapRouter buys constituents with your USDC, then mints shares in one flow.
-            </p>
             <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
           </TxGate>
         )}
