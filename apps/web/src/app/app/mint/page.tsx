@@ -24,9 +24,9 @@ export default function MintPage() {
   const usdc = addresses.usdc;
   const [gross, setGross] = useState('0.01');
   const [usdcSpend, setUsdcSpend] = useState('1');
-  const [mode, setMode] = useState<'inkind' | 'zap'>('inkind');
+  const [mode, setMode] = useState<'inkind' | 'zap'>('zap');
 
-  const grossSharesInKind = useMemo(() => {
+  const grossShares = useMemo(() => {
     try {
       return parseUnits(gross || '0', 18);
     } catch {
@@ -41,9 +41,6 @@ export default function MintPage() {
       return 0n;
     }
   }, [usdcSpend]);
-
-  const zapShares = zapUsdc * 10n ** 12n;
-  const grossShares = mode === 'zap' ? zapShares : grossSharesInKind;
 
   const { data: preview } = useReadContract({
     address: index,
@@ -106,14 +103,16 @@ export default function MintPage() {
     });
   }
 
-  function mintZap() {
-    if (!zap || !index || zapUsdc === 0n || zapShares === 0n) return;
+  function buyBasket() {
+    if (!zap || !constituents || constituents.length < 2 || zapUsdc === 0n) return;
     reset();
+    const weights = constituents.map(() => 5000) as number[];
+    const minOut = constituents.map(() => 0n);
     writeContract({
       address: zap,
       abi: IndexZapRouterAbi,
-      functionName: 'mintExactSharesWithUSDC',
-      args: [index, zapShares, zapUsdc, deadlineSeconds()],
+      functionName: 'buyTargetBasket',
+      args: [constituents as `0x${string}`[], weights, zapUsdc, minOut, deadlineSeconds()],
     });
   }
 
@@ -121,7 +120,7 @@ export default function MintPage() {
     <div className="space-y-6">
       <PageHeader
         title="Mint"
-        subtitle="Deposit basket assets — or pay with USDC — to receive index shares. Preview amounts before you send."
+        subtitle="Zap spends USDC 50/50 into tNVDA and tMSFT. Then mint shares from the tokens in your wallet."
       />
 
       <StepsGuide
@@ -129,20 +128,12 @@ export default function MintPage() {
         defaultOpen
         steps={[
           {
-            title: 'Choose a path',
-            body: 'In-kind: approve tNVDA and tMSFT separately, then mint. Zap: type USDC to spend.',
+            title: 'Zap: spend USDC',
+            body: 'Buy 50/50 basket. Tokens land in your wallet. This does not mint shares.',
           },
           {
-            title: 'Preview',
-            body: 'Shows basket required and shares after the 10 bps fee.',
-          },
-          {
-            title: 'Approve',
-            body: 'Two token approvals cannot share one MetaMask popup. Confirm tNVDA, then tMSFT, then mint.',
-          },
-          {
-            title: 'Confirm mint',
-            body: 'Submit on Base Sepolia.',
+            title: 'Mint',
+            body: 'Approve tNVDA and tMSFT, then mint a share amount the preview basket can cover.',
           },
         ]}
       />
@@ -161,26 +152,22 @@ export default function MintPage() {
             className={mode === 'zap' ? btnPrimary : btnSecondary}
             onClick={() => setMode('zap')}
           >
-            Pay with USDC (zap)
+            Pay with USDC (buy 50/50)
           </button>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {mode === 'inkind' ? (
-            <Field
-              label="Shares to mint (gross)"
-              help="You must hold the tNVDA and tMSFT amounts in the table."
-            >
-              <input className={inputClass} value={gross} onChange={(e) => setGross(e.target.value)} />
-            </Field>
-          ) : (
-            <Field
-              label="USDC to spend"
-              help="Spent in the stock pools. Preview assumes $1 NAV; thin pools may revert."
-            >
+          {mode === 'zap' && (
+            <Field label="USDC to spend" help="Split 50/50 across tNVDA and tMSFT pools. Start with 1.">
               <input className={inputClass} value={usdcSpend} onChange={(e) => setUsdcSpend(e.target.value)} />
             </Field>
           )}
+          <Field
+            label="Shares to mint after you hold the basket"
+            help="In-kind mint. Must be covered by tNVDA + tMSFT in this wallet."
+          >
+            <input className={inputClass} value={gross} onChange={(e) => setGross(e.target.value)} />
+          </Field>
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -191,7 +178,7 @@ export default function MintPage() {
 
         {required && constituents && (
           <div className="mt-4 overflow-x-auto">
-            <p className="mb-2 text-xs font-medium text-slate-500">Basket required (ceil)</p>
+            <p className="mb-2 text-xs font-medium text-slate-500">Basket required for the share amount above</p>
             <table className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr>
@@ -211,42 +198,43 @@ export default function MintPage() {
           </div>
         )}
 
-        {mode === 'inkind' ? (
-          <TxGate require={['ai2']} actionLabel="in-kind mint">
+        {mode === 'zap' ? (
+          <TxGate require={['ai2', 'zap', 'usdc']} actionLabel="USDC basket buy">
             <div className="mt-5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={btnSecondary}
-                disabled={isPending}
-                onClick={() => approveToken(addresses.tNVDA)}
-              >
+              <button type="button" className={btnSecondary} disabled={isPending} onClick={approveUsdcZap}>
+                Approve USDC for zap
+              </button>
+              <button type="button" className={btnPrimary} disabled={isPending} onClick={buyBasket}>
+                Buy 50/50 basket
+              </button>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              After the buy confirms: Approve tNVDA, Approve tMSFT, Mint shares (use 0.01 first).
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className={btnSecondary} disabled={isPending} onClick={() => approveToken(addresses.tNVDA)}>
                 Approve tNVDA
               </button>
-              <button
-                type="button"
-                className={btnSecondary}
-                disabled={isPending}
-                onClick={() => approveToken(addresses.tMSFT)}
-              >
+              <button type="button" className={btnSecondary} disabled={isPending} onClick={() => approveToken(addresses.tMSFT)}>
                 Approve tMSFT
               </button>
               <button type="button" className={btnPrimary} disabled={isPending || !address} onClick={mintInKind}>
                 Mint shares
               </button>
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">
-              Approve tNVDA, wait for the tx, approve tMSFT, wait, then mint. Spender is the AI2 index.
-            </p>
             <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
           </TxGate>
         ) : (
-          <TxGate require={['ai2', 'zap', 'usdc']} actionLabel="USDC zap mint">
+          <TxGate require={['ai2']} actionLabel="in-kind mint">
             <div className="mt-5 flex flex-wrap gap-2">
-              <button type="button" className={btnSecondary} disabled={isPending} onClick={approveUsdcZap}>
-                Approve USDC for zap
+              <button type="button" className={btnSecondary} disabled={isPending} onClick={() => approveToken(addresses.tNVDA)}>
+                Approve tNVDA
               </button>
-              <button type="button" className={btnPrimary} disabled={isPending} onClick={mintZap}>
-                Mint with USDC
+              <button type="button" className={btnSecondary} disabled={isPending} onClick={() => approveToken(addresses.tMSFT)}>
+                Approve tMSFT
+              </button>
+              <button type="button" className={btnPrimary} disabled={isPending || !address} onClick={mintInKind}>
+                Mint shares
               </button>
             </div>
             <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
