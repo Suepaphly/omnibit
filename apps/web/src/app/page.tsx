@@ -91,9 +91,9 @@ export default function HomePage() {
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-accent-soft">
             Omnibit · Index Forge
           </p>
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl sm:leading-tight">
-            Fully backed index shares that{' '}
-            <span className="bg-gradient-to-r from-accent via-accent-soft to-accretion-soft bg-clip-text text-transparent">
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl sm:leading-tight">
+            <span className="block">Fully backed index shares that</span>
+            <span className="mt-2 block bg-gradient-to-r from-accent via-accent-soft to-accretion-soft bg-clip-text text-transparent">
               accrete without dilution
             </span>
           </h1>
