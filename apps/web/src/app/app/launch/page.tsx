@@ -151,29 +151,20 @@ export default function LaunchPage() {
     <div className="space-y-6">
       <PageHeader
         title="Launch"
-        subtitle="1b buys the basket and deploys the index. 2b opens the AI2/USDC pool and seeds LP."
+        subtitle="1b buys the basket and deploys the index. 2b opens the index/USDC pool and seeds LP."
       />
 
       <StepsGuide
         title="How to use this page"
         defaultOpen
         steps={[
-          {
-            title: '1a Approve USDC',
-            body: 'Launcher can pull seed + LP USDC.',
-          },
+          { title: '1a Approve USDC', body: 'Launcher can pull seed + LP USDC.' },
           {
             title: '1b Create Index and Seed',
-            body: 'Deploys the index token and buys tNVDA + tMSFT. The new index address fills in below from the receipt.',
+            body: 'Deploys the index token and buys tNVDA + tMSFT. The new address appears below from the receipt.',
           },
-          {
-            title: '2a Approve shares for LP',
-            body: 'Allow the launcher to pair those index shares with USDC.',
-          },
-          {
-            title: '2b Open market',
-            body: 'Creates the Uniswap V4 index/USDC pool with the fee hook and adds liquidity.',
-          },
+          { title: '2a Approve shares for LP', body: 'Allow the launcher to pair those shares with USDC.' },
+          { title: '2b Open market', body: 'Creates the V4 pool with the fee hook and adds liquidity.' },
         ]}
       />
 
@@ -207,15 +198,8 @@ export default function LaunchPage() {
             <Field label="USDC for pool liquidity" help="Paired with index shares in 2b.">
               <input className={inputClass} value={lpUsdc} onChange={(e) => setLpUsdc(e.target.value)} />
             </Field>
-            <Field
-              label="Index address"
-              help="Filled from 1b (IndexSeeded). Defaults to the live AI2 index."
-            >
-              <input
-                className={inputClass}
-                value={indexOverride}
-                onChange={(e) => setIndexOverride(e.target.value)}
-              />
+            <Field label="Index address" help="Filled from 1b (IndexSeeded). Defaults to live AI2.">
+              <input className={inputClass} value={indexOverride} onChange={(e) => setIndexOverride(e.target.value)} />
             </Field>
             <div className="flex flex-col justify-end gap-2">
               <p className="text-xs text-slate-500">
@@ -240,6 +224,23 @@ export default function LaunchPage() {
             </button>
           </div>
           <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
+
+          {indexOverride && (
+            <div className="mt-4 rounded-lg border border-canvas-border bg-canvas/60 p-3 text-left">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Index token — add in MetaMask</p>
+              <p className="mt-1 break-all font-mono text-sm text-sky-300">{indexOverride}</p>
+              <p className="mt-2 text-xs text-slate-500">
+                MetaMask → Import tokens → Base Sepolia → paste address · decimals 18
+              </p>
+              <button
+                type="button"
+                className={`${btnSecondary} mt-2`}
+                onClick={() => navigator.clipboard.writeText(indexOverride)}
+              >
+                Copy address
+              </button>
+            </div>
+          )}
         </TxGate>
       </Panel>
     </div>
