@@ -2,14 +2,16 @@
 
 import { useMemo, useState } from 'react';
 import { useReadContracts } from 'wagmi';
+import { encodeAbiParameters, keccak256, type Address } from 'viem';
 import { Panel, Stat } from '@/components/Panel';
 import { PageHeader } from '@/components/PageHeader';
-import { StepsGuide } from '@/components/StepsGuide';
 import { addresses, hasAddress } from '@/config/addresses';
 import { AccretiveIndexAbi, erc20Abi, IndexFactoryAbi } from '@/abi';
 import { fmtUnits, fmtUsdWad, shortAddr } from '@/lib/format';
 
 const Q96 = 2n ** 96n;
+const USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const;
+const HOOK = (addresses.hook ?? '0x9DE085DfE6f3eD3c340d1Dd4F53a5EB8eA23A0CC') as Address;
 
 function fmtInt(n?: bigint) {
   if (n === undefined) return '—';
@@ -18,10 +20,7 @@ function fmtInt(n?: bigint) {
 
 function poolReserves(sqrt?: bigint, liq?: bigint) {
   if (!sqrt || !liq || sqrt === 0n) return { usdc: undefined as bigint | undefined, token: undefined as bigint | undefined };
-  return {
-    usdc: (liq * Q96) / sqrt,
-    token: (liq * sqrt) / Q96,
-  };
+  return { usdc: (liq * Q96) / sqrt, token: (liq * sqrt) / Q96 };
 }
 
 function usdPerToken1Wad(sqrtPriceX96?: bigint): bigint | undefined {
@@ -29,6 +28,30 @@ function usdPerToken1Wad(sqrtPriceX96?: bigint): bigint | undefined {
   const priceX192 = sqrtPriceX96 * sqrtPriceX96;
   const token0RawForOneToken1 = (2n ** 192n * 10n ** 18n) / priceX192;
   return token0RawForOneToken1 * 10n ** 12n;
+}
+
+function indexPoolId(token: Address): `0x${string}` {
+  const a = BigInt(token);
+  const b = BigInt(USDC);
+  const currency0 = a < b ? token : USDC;
+  const currency1 = a < b ? USDC : token;
+  return keccak256(
+    encodeAbiParameters(
+      [
+        {
+          type: 'tuple',
+          components: [
+            { name: 'currency0', type: 'address' },
+            { name: 'currency1', type: 'address' },
+            { name: 'fee', type: 'uint24' },
+            { name: 'tickSpacing', type: 'int24' },
+            { name: 'hooks', type: 'address' },
+          ],
+        },
+      ],
+      [{ currency0, currency1, fee: 500, tickSpacing: 10, hooks: HOOK }],
+    ),
+  );
 }
 
 const feedAbi = [
@@ -45,13 +68,7 @@ const feedAbi = [
       { name: 'answeredInRound', type: 'uint80' },
     ],
   },
-  {
-    type: 'function',
-    name: 'decimals',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: '', type: 'uint8' }],
-  },
+  { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint8' }] },
 ] as const;
 
 const stateViewAbi = [
@@ -97,10 +114,29 @@ const STOCK_POOLS: { label: string; poolId: `0x${string}`; token: `0x${string}`;
 ];
 
 export default function VaultPage() {
-  const index = addresses.ai2;
-  const enabled = hasAddress(index);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const factory = addresses.factory;
   const stateView = addresses.stateView;
+  const [selected, setSelected] = useState<Address | undefined>(addresses.ai2);
+
+  const { data: factoryData } = useReadContracts({
+    contracts: factory
+      ? [{ address: factory, abi: IndexFactoryAbi, functionName: 'indexes' }]
+      : [],
+    query: { enabled: Boolean(factory) },
+  });
+
+  const created = useMemo(() => {
+    const fromFactory = (factoryData?.[0]?.result as Address[] | undefined) ?? [];
+    const extra = addresses.ai2 && !fromFactory.some((a) => a.toLowerCase() === addresses.ai2!.toLowerCase())
+      ? [addresses.ai2]
+      : [];
+    return [...extra, ...fromFactory];
+  }, [factoryData, addresses.ai2]);
+
+  const index = (selected && created.some((a) => a.toLowerCase() === selected.toLowerCase())
+    ? selected
+    : created[0]) as Address | undefined;
+  const enabled = hasAddress(index);
 
   const { data: meta } = useReadContracts({
     contracts: enabled
@@ -129,6 +165,27 @@ export default function VaultPage() {
   const redeemFee = meta?.[7]?.result as number | undefined;
   const engine = meta?.[8]?.result as `0x${string}` | undefined;
 
+  const listCalls = useMemo(() => {
+    return created.flatMap((addr) => [
+      { address: addr, abi: AccretiveIndexAbi, functionName: 'name' as const },
+      { address: addr, abi: AccretiveIndexAbi, functionName: 'symbol' as const },
+      { address: addr, abi: AccretiveIndexAbi, functionName: 'totalSupply' as const },
+    ]);
+  }, [created]);
+
+  const { data: listMeta } = useReadContracts({
+    contracts: listCalls,
+    query: { enabled: created.length > 0 },
+  });
+
+  const createdRows = created.map((addr, i) => ({
+    addr,
+    name: listMeta?.[i * 3]?.result as string | undefined,
+    symbol: listMeta?.[i * 3 + 1]?.result as string | undefined,
+    supply: listMeta?.[i * 3 + 2]?.result as bigint | undefined,
+    poolId: indexPoolId(addr),
+  }));
+
   const basketReads = useMemo(() => {
     if (!enabled || !constituents?.length) return [];
     const calls = [];
@@ -136,7 +193,6 @@ export default function VaultPage() {
       calls.push({ address: index!, abi: AccretiveIndexAbi, functionName: 'trackedBalance' as const, args: [c] as const });
       calls.push({ address: c, abi: erc20Abi, functionName: 'balanceOf' as const, args: [index!] as const });
       calls.push({ address: c, abi: erc20Abi, functionName: 'symbol' as const });
-      calls.push({ address: index!, abi: AccretiveIndexAbi, functionName: 'cumulativeAccretedRaw' as const, args: [c] as const });
     }
     return calls;
   }, [enabled, constituents, index]);
@@ -146,7 +202,6 @@ export default function VaultPage() {
     query: { enabled: basketReads.length > 0 },
   });
 
-  const factory = addresses.factory;
   const feedCalls = useMemo(() => {
     if (!factory || !constituents?.length) return [];
     return constituents.map((c) => ({
@@ -163,16 +218,13 @@ export default function VaultPage() {
   });
 
   const rows = (constituents ?? []).map((c, i) => {
-    const base = i * 4;
+    const base = i * 3;
     const tracked = basket?.[base]?.result as bigint | undefined;
     const raw = basket?.[base + 1]?.result as bigint | undefined;
     const sym = (basket?.[base + 2]?.result as string | undefined) ?? shortAddr(c);
-    const accrRaw = basket?.[base + 3]?.result as bigint | undefined;
-    const donation =
-      tracked !== undefined && raw !== undefined && raw >= tracked ? raw - tracked : undefined;
     const fromFactory = feeds?.[i]?.result as `0x${string}` | undefined;
     const feed = fromFactory ?? FALLBACK_FEED[c.toLowerCase()];
-    return { c, sym, tracked, raw, accrRaw, donation, feed };
+    return { c, sym, tracked, raw, feed };
   });
 
   const priceCalls = useMemo(() => {
@@ -210,16 +262,12 @@ export default function VaultPage() {
 
   const poolList = [
     ...STOCK_POOLS,
-    ...(addresses.poolId
-      ? [
-          {
-            label: 'AI2 / USDC',
-            poolId: addresses.poolId,
-            token: (addresses.ai2 ?? '0x8ae66f48Dd737F98FA2C5E8C5826aE497A8B9790') as `0x${string}`,
-            hook: shortAddr(addresses.hook) ?? 'hook',
-          },
-        ]
-      : []),
+    ...createdRows.map((r) => ({
+      label: `${r.symbol ?? shortAddr(r.addr)} / USDC`,
+      poolId: r.poolId,
+      token: r.addr,
+      hook: shortAddr(HOOK),
+    })),
   ];
 
   const poolCalls = useMemo(() => {
@@ -228,7 +276,7 @@ export default function VaultPage() {
       { address: stateView, abi: stateViewAbi, functionName: 'getSlot0' as const, args: [p.poolId] as const },
       { address: stateView, abi: stateViewAbi, functionName: 'getLiquidity' as const, args: [p.poolId] as const },
     ]);
-  }, [stateView, addresses.poolId]);
+  }, [stateView, poolList.map((p) => p.poolId).join()]);
 
   const { data: poolData } = useReadContracts({
     contracts: poolCalls,
@@ -239,59 +287,66 @@ export default function VaultPage() {
     <div className="space-y-6">
       <PageHeader
         title="Vault"
-        subtitle="Oracle NAV for the index. Pool mid is what zap/trade pay. Tick is Uniswap’s price index (1.0001^tick)."
+        subtitle="Every index the factory created, plus its USDC pair. Click a row to load that vault."
       />
 
-      <StepsGuide
-        title="How to read this"
-        defaultOpen={false}
-        steps={[
-          {
-            title: 'Vault NAV',
-            body: 'Est. value / share = tracked holdings × mock feeds / supply. Staying near $1 is expected.',
-          },
-          {
-            title: 'Pool USDC / token',
-            body: 'Approximate reserves from liquidity L and current price. Not the same as your wallet.',
-          },
-          {
-            title: 'Tick',
-            body: 'Discrete AMM price. You do not set it. Higher tick ≈ cheaper token vs USDC.',
-          },
-        ]}
-      />
-
-      <Panel title="Index summary" subtitle="Oracle mark-to-market, not pool mid.">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="Index" value={name && symbol ? `${name} (${symbol})` : shortAddr(index)} />
-          <Stat label="Shares outstanding" value={fmtUnits(totalSupply, 18)} hint="totalSupply · 18 decimals" />
-          <Stat
-            label="Est. value / share"
-            value={fmtUsdWad(navPerShare, 6)}
-            hint="feeds × tracked / supply"
-          />
-          <Stat label="Seeded" value={seeded === undefined ? '—' : seeded ? 'Yes' : 'No'} />
+      <Panel title="Created indexes" subtitle="From IndexFactory.indexes(). Open market (2b) before the pair row has liquidity.">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead className="text-xs uppercase text-slate-500">
+              <tr>
+                <th className="py-2 pr-3">Token</th>
+                <th className="py-2 pr-3">Address</th>
+                <th className="py-2 pr-3">Supply</th>
+                <th className="py-2">Pair</th>
+              </tr>
+            </thead>
+            <tbody>
+              {createdRows.length === 0 && (
+                <tr>
+                  <td className="py-3 text-slate-500" colSpan={4}>
+                    No indexes yet. Launch 1b Create Index and Seed.
+                  </td>
+                </tr>
+              )}
+              {createdRows.map((r) => {
+                const active = index && r.addr.toLowerCase() === index.toLowerCase();
+                return (
+                  <tr
+                    key={r.addr}
+                    className={`cursor-pointer border-t border-canvas-border/60 font-mono text-xs ${active ? 'bg-sky-500/10' : ''}`}
+                    onClick={() => setSelected(r.addr)}
+                  >
+                    <td className="py-2 pr-3 text-slate-200">
+                      {r.name ?? '—'} {r.symbol ? `(${r.symbol})` : ''}
+                    </td>
+                    <td className="py-2 pr-3 text-sky-300">{r.addr}</td>
+                    <td className="py-2 pr-3">{fmtUnits(r.supply)}</td>
+                    <td className="py-2">{r.symbol ?? 'INDEX'} / USDC</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Stat label="Basket USD (tracked)" value={fmtUsdWad(basketUsdWad, 4)} />
-          <Stat label="Accreted USD (wad)" value={fmtUsdWad(usdWad)} />
-        </div>
-        <button type="button" className="mt-4 text-sm text-sky-400 underline" onClick={() => setShowAdvanced((v) => !v)}>
-          {showAdvanced ? 'Hide advanced details' : 'Show advanced details'}
-        </button>
-        {showAdvanced && (
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <Stat label="Mint fee" value={mintFee !== undefined ? `${mintFee} bps` : '—'} />
-            <Stat label="Redeem fee" value={redeemFee !== undefined ? `${redeemFee} bps` : '—'} />
-            <Stat label="Accretion engine" value={shortAddr(engine ?? addresses.engine)} />
-          </div>
-        )}
       </Panel>
 
-      <Panel
-        title="Uniswap V4 pools"
-        subtitle="USDC and Token reserves held in the Liquidity Pools"
-      >
+      <Panel title="Index summary" subtitle="Oracle mark-to-market for the selected index.">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Stat label="Index" value={name && symbol ? `${name} (${symbol})` : shortAddr(index)} />
+          <Stat label="Shares outstanding" value={fmtUnits(totalSupply, 18)} />
+          <Stat label="Est. value / share" value={fmtUsdWad(navPerShare, 6)} hint="feeds × tracked / supply" />
+          <Stat label="Seeded" value={seeded === undefined ? '—' : seeded ? 'Yes' : 'No'} />
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Stat label="Basket USD (tracked)" value={fmtUsdWad(basketUsdWad, 4)} />
+          <Stat label="Accreted USD (wad)" value={fmtUsdWad(usdWad)} />
+          <Stat label="Mint / redeem fee" value={mintFee !== undefined ? `${mintFee} / ${redeemFee} bps` : '—'} />
+          <Stat label="Engine" value={shortAddr(engine ?? addresses.engine)} />
+        </div>
+      </Panel>
+
+      <Panel title="Uniswap V4 pools" subtitle="Stock books plus one USDC pair per created index.">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
@@ -314,10 +369,11 @@ export default function VaultPage() {
                 const implied = usdPerToken1Wad(sqrt);
                 const { usdc, token } = poolReserves(sqrt, liq);
                 const row = rowsPriced.find((r) => r.c.toLowerCase() === p.token.toLowerCase());
+                const isIndex = created.some((a) => a.toLowerCase() === p.token.toLowerCase());
                 const feedUsd =
                   row?.px !== undefined && row.dec !== undefined
                     ? (row.px * 10n ** 18n) / 10n ** BigInt(row.dec)
-                    : p.label.startsWith('AI2')
+                    : isIndex
                       ? navPerShare
                       : undefined;
                 return (
@@ -330,12 +386,8 @@ export default function VaultPage() {
                     <td className="py-2 pr-3">{fmtUnits(token, 18, 6)}</td>
                     <td className="py-2 pr-3">{fmtUsdWad(implied, 4)}</td>
                     <td className="py-2 pr-3">{fmtUsdWad(feedUsd, 4)}</td>
-                    <td className="py-2 pr-3" title="Uniswap L, not USD">
-                      {fmtInt(liq)}
-                    </td>
-                    <td className="py-2" title="1.0001^tick. Higher tick = cheaper token vs USDC.">
-                      {tick === undefined ? '—' : String(tick)}
-                    </td>
+                    <td className="py-2 pr-3">{fmtInt(liq)}</td>
+                    <td className="py-2">{tick === undefined ? '—' : String(tick)}</td>
                   </tr>
                 );
               })}
@@ -344,17 +396,15 @@ export default function VaultPage() {
         </div>
       </Panel>
 
-      <Panel title="Basket holdings" subtitle="Recognized vs on-chain balances.">
+      <Panel title="Basket holdings" subtitle="Selected index only.">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr>
                 <th className="py-2 pr-3">Asset</th>
                 <th className="py-2 pr-3">Recognized</th>
                 <th className="py-2 pr-3">On-chain</th>
-                <th className="py-2 pr-3">Donation</th>
-                <th className="py-2 pr-3">USD (tracked)</th>
-                <th className="py-2">Price feed</th>
+                <th className="py-2">USD (tracked)</th>
               </tr>
             </thead>
             <tbody>
@@ -366,9 +416,7 @@ export default function VaultPage() {
                   </td>
                   <td className="py-2 pr-3">{fmtUnits(r.tracked)}</td>
                   <td className="py-2 pr-3">{fmtUnits(r.raw)}</td>
-                  <td className="py-2 pr-3 text-slate-400">{fmtUnits(r.donation)}</td>
-                  <td className="py-2 pr-3">{fmtUsdWad(r.usdWadRow)}</td>
-                  <td className="py-2">{shortAddr(r.feed)}</td>
+                  <td className="py-2">{fmtUsdWad(r.usdWadRow)}</td>
                 </tr>
               ))}
             </tbody>
