@@ -7,8 +7,20 @@ import {
   useWaitForTransactionReceipt,
   useReadContract,
 } from 'wagmi';
-import { parseUnits, parseEventLogs, type Address } from 'viem';
-import { Panel, Field, inputClass, btnPrimary, btnSecondary, Stat } from '@/components/Panel';
+import {
+  parseUnits,
+  parseEventLogs,
+  type Address,
+} from 'viem';
+
+import {
+  Panel,
+  Field,
+  inputClass,
+  btnPrimary,
+  btnSecondary,
+  Stat,
+} from '@/components/Panel';
 import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
 import { TxStatus } from '@/components/TxStatus';
@@ -19,11 +31,20 @@ import { deadlineSeconds, shortAddr } from '@/lib/format';
 
 export default function LaunchPage() {
   const { address } = useAccount();
-  const [name, setName] = useState('Index AI2');
-  const [symbol, setSymbol] = useState('AI2');
+
+  // User-configurable new index
+  const [name, setName] = useState('');
+  const [symbol, setSymbol] = useState('');
   const [backingUsdc, setBackingUsdc] = useState('2');
   const [lpUsdc, setLpUsdc] = useState('1');
-  const [indexOverride, setIndexOverride] = useState(addresses.ai2 ?? '');
+
+  // IMPORTANT:
+  // Do NOT initialize this from addresses.ai2.
+  // It should only become populated after a successful createSeed.
+  const [newIndexAddress, setNewIndexAddress] = useState<Address | undefined>(
+    undefined
+  );
+
   const [showAddrs, setShowAddrs] = useState(false);
 
   const tNVDA = addresses.tNVDA;
@@ -31,13 +52,27 @@ export default function LaunchPage() {
   const launcher = addresses.launcher;
   const usdc = addresses.usdc;
 
+  /*
+   * --------------------------------------------------------------------------
+   * READS
+   * --------------------------------------------------------------------------
+   */
+
   const { data: allowance } = useReadContract({
     address: usdc,
     abi: erc20Abi,
     functionName: 'allowance',
     args: address && launcher ? [address, launcher] : undefined,
-    query: { enabled: Boolean(address && launcher) },
+    query: {
+      enabled: Boolean(address && launcher),
+    },
   });
+
+  /*
+   * --------------------------------------------------------------------------
+   * TRANSACTION STATE
+   * --------------------------------------------------------------------------
+   */
 
   const {
     writeContract,
@@ -46,24 +81,52 @@ export default function LaunchPage() {
     error,
     reset,
   } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({ hash });
+
+  const {
+    isLoading: isConfirming,
+    isSuccess,
+    data: receipt,
+  } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  /*
+   * --------------------------------------------------------------------------
+   * PARSE NEW INDEX ADDRESS FROM createSeed RECEIPT
+   * --------------------------------------------------------------------------
+   *
+   * IndexLauncher.createSeed emits IndexSeeded.
+   * Once that transaction confirms, extract the index address and make it
+   * the active index for the rest of this launch flow.
+   */
 
   useEffect(() => {
     if (!receipt) return;
+
     try {
-      const evs = parseEventLogs({
+      const events = parseEventLogs({
         abi: IndexLauncherAbi,
         logs: receipt.logs,
         eventName: 'IndexSeeded',
       });
-      const created = evs[0]?.args?.index as Address | undefined;
-      if (created) setIndexOverride(created);
+
+      const created = events[0]?.args?.index as Address | undefined;
+
+      if (created) {
+        setNewIndexAddress(created);
+      }
     } catch {
-      /* not a createSeed receipt */
+      // Other transactions on this page do not emit IndexSeeded.
+      // Do nothing.
     }
   }, [receipt]);
 
-  const indexForMarket = (indexOverride || addresses.ai2 || '') as Address;
+  /*
+   * --------------------------------------------------------------------------
+   * AMOUNTS
+   * --------------------------------------------------------------------------
+   */
+
   const backing = useMemo(() => {
     try {
       return parseUnits(backingUsdc || '0', 6);
@@ -71,6 +134,7 @@ export default function LaunchPage() {
       return 0n;
     }
   }, [backingUsdc]);
+
   const lp = useMemo(() => {
     try {
       return parseUnits(lpUsdc || '0', 6);
@@ -79,8 +143,18 @@ export default function LaunchPage() {
     }
   }, [lpUsdc]);
 
+  /*
+   * --------------------------------------------------------------------------
+   * INDEX PARAMETERS
+   * --------------------------------------------------------------------------
+   *
+   * MVP basket remains the validated tNVDA / tMSFT 50/50 basket.
+   * Name and symbol are user-selected.
+   */
+
   const indexParams = useMemo(() => {
     if (!tNVDA || !tMSFT || !address) return undefined;
+
     return {
       name,
       symbol,
@@ -90,9 +164,17 @@ export default function LaunchPage() {
     };
   }, [name, symbol, tNVDA, tMSFT, address]);
 
+  /*
+   * --------------------------------------------------------------------------
+   * STEP 1A — APPROVE USDC
+   * --------------------------------------------------------------------------
+   */
+
   function approveUsdc() {
     if (!launcher) return;
+
     reset();
+
     writeContract({
       address: usdc,
       abi: erc20Abi,
@@ -101,9 +183,31 @@ export default function LaunchPage() {
     });
   }
 
+  /*
+   * --------------------------------------------------------------------------
+   * STEP 1B — CREATE + SEED NEW INDEX
+   * --------------------------------------------------------------------------
+   */
+
   function createSeed() {
     if (!launcher || !indexParams) return;
+
+    if (!name.trim()) {
+      window.alert('Enter an index name.');
+      return;
+    }
+
+    if (!symbol.trim()) {
+      window.alert('Enter an index symbol.');
+      return;
+    }
+
+    // Clear any previous result.
+    // The address shown after this must come from THIS transaction.
+    setNewIndexAddress(undefined);
+
     reset();
+
     writeContract({
       address: launcher,
       abi: IndexLauncherAbi,
@@ -124,51 +228,146 @@ export default function LaunchPage() {
     });
   }
 
+  /*
+   * --------------------------------------------------------------------------
+   * STEP 2A — APPROVE NEW INDEX SHARES FOR LP
+   * --------------------------------------------------------------------------
+   */
+
   function approveShares() {
-    if (!launcher || !indexForMarket) return;
+    if (!launcher || !newIndexAddress) return;
+
     reset();
+
+    // INDEX = 18 decimals, USDC = 6 decimals
     const indexAmount = lp * 10n ** 12n;
+
     writeContract({
-      address: indexForMarket,
+      address: newIndexAddress,
       abi: erc20Abi,
       functionName: 'approve',
       args: [launcher, indexAmount],
     });
   }
 
+  /*
+   * --------------------------------------------------------------------------
+   * STEP 2B — INITIALIZE NEW INDEX/USDC MARKET
+   * --------------------------------------------------------------------------
+   */
+
   function openMarket() {
-    if (!launcher || !indexForMarket) return;
+    if (!launcher || !newIndexAddress) return;
+
     reset();
+
     writeContract({
       address: launcher,
       abi: IndexLauncherAbi,
       functionName: 'initializeMarket',
-      args: [indexForMarket, lp, lp, deadlineSeconds()],
+      args: [
+        newIndexAddress,
+        lp,
+        lp,
+        deadlineSeconds(),
+      ],
     });
   }
+
+  /*
+   * --------------------------------------------------------------------------
+   * COPY ADDRESS
+   * --------------------------------------------------------------------------
+   */
+
+  async function copyIndexAddress() {
+    if (!newIndexAddress) return;
+
+    await navigator.clipboard.writeText(newIndexAddress);
+  }
+
+  /*
+   * --------------------------------------------------------------------------
+   * ADD NEW INDEX TOKEN TO METAMASK
+   * --------------------------------------------------------------------------
+   */
+
+  async function addIndexToWallet() {
+    if (!newIndexAddress) return;
+
+    const ethereum = (
+      window as typeof window & {
+        ethereum?: {
+          request: (args: {
+            method: string;
+            params?: unknown;
+          }) => Promise<unknown>;
+        };
+      }
+    ).ethereum;
+
+    if (!ethereum) {
+      window.alert('No injected wallet was detected.');
+      return;
+    }
+
+    try {
+      await ethereum.request({
+        method: 'wallet_watchAsset',
+        params: {
+          type: 'ERC20',
+          options: {
+            address: newIndexAddress,
+            symbol: symbol.trim(),
+            decimals: 18,
+          },
+        },
+      });
+    } catch (walletError) {
+      console.error('Unable to add token to wallet:', walletError);
+    }
+  }
+
+  /*
+   * --------------------------------------------------------------------------
+   * UI
+   * --------------------------------------------------------------------------
+   */
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Launch"
-        subtitle="1b buys the basket and deploys the index. 2b opens the index/USDC pool and seeds LP."
+        subtitle="Create a new fully backed index, seed its basket, then initialize its Index/USDC Uniswap V4 market."
       />
 
       <StepsGuide
         title="How to use this page"
         defaultOpen
         steps={[
-          { title: '1a Approve USDC', body: 'Launcher can pull seed + LP USDC.' },
+          {
+            title: '1a Approve USDC',
+            body: 'Allow the launcher to pull the USDC required for the basket seed and initial pool liquidity.',
+          },
           {
             title: '1b Create Index and Seed',
-            body: 'Deploys the index token and buys tNVDA + tMSFT. The new address appears below from the receipt.',
+            body: 'Deploys a brand-new index token, buys tNVDA + tMSFT, seeds the vault, and returns the new index contract address.',
           },
-          { title: '2a Approve shares for LP', body: 'Allow the launcher to pair those shares with USDC.' },
-          { title: '2b Open market', body: 'Creates the V4 pool with the fee hook and adds liquidity.' },
+          {
+            title: '2a Approve shares for LP',
+            body: 'Approve the newly created index shares so the launcher can pair them with USDC.',
+          },
+          {
+            title: '2b Open market',
+            body: 'Creates the new Index/USDC Uniswap V4 pool with the protocol fee hook and seeds initial liquidity.',
+          },
         ]}
       />
 
-      <Panel title="Bootstrap an index" subtitle="Use 2 USDC seed and 1 USDC LP on Sepolia.">
+      <Panel
+        title="Bootstrap an index"
+        subtitle="Base Sepolia MVP uses the validated 50/50 tNVDA + tMSFT reference basket."
+      >
         <button
           type="button"
           className="mb-4 text-xs font-medium text-accent-soft underline-offset-2 hover:underline"
@@ -176,69 +375,223 @@ export default function LaunchPage() {
         >
           {showAddrs ? 'Hide contract addresses' : 'Show contract addresses'}
         </button>
+
         {showAddrs && (
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
-            <Stat label="Launcher" value={shortAddr(launcher)} />
-            <Stat label="tNVDA" value={shortAddr(tNVDA)} />
-            <Stat label="tMSFT" value={shortAddr(tMSFT)} />
+            <Stat
+              label="Launcher"
+              value={shortAddr(launcher)}
+            />
+            <Stat
+              label="tNVDA"
+              value={shortAddr(tNVDA)}
+            />
+            <Stat
+              label="tMSFT"
+              value={shortAddr(tMSFT)}
+            />
           </div>
         )}
 
-        <TxGate require={['launcher', 'tNVDA', 'tMSFT', 'usdc']} actionLabel="launch">
+        <TxGate
+          require={['launcher', 'tNVDA', 'tMSFT', 'usdc']}
+          actionLabel="launch"
+        >
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Index name">
-              <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+              <input
+                className={inputClass}
+                value={name}
+                placeholder="e.g. Index Tech2"
+                onChange={(e) => setName(e.target.value)}
+              />
             </Field>
+
             <Field label="Symbol">
-              <input className={inputClass} value={symbol} onChange={(e) => setSymbol(e.target.value)} />
+              <input
+                className={inputClass}
+                value={symbol}
+                placeholder="e.g. TECH2"
+                onChange={(e) => setSymbol(e.target.value)}
+              />
             </Field>
-            <Field label="USDC for basket seed" help="Spent in 1b to buy tNVDA and tMSFT.">
-              <input className={inputClass} value={backingUsdc} onChange={(e) => setBackingUsdc(e.target.value)} />
+
+            <Field
+              label="USDC for basket seed"
+              help="Spent in step 1b to acquire tNVDA and tMSFT backing."
+            >
+              <input
+                className={inputClass}
+                value={backingUsdc}
+                onChange={(e) => setBackingUsdc(e.target.value)}
+              />
             </Field>
-            <Field label="USDC for pool liquidity" help="Paired with index shares in 2b.">
-              <input className={inputClass} value={lpUsdc} onChange={(e) => setLpUsdc(e.target.value)} />
+
+            <Field
+              label="USDC for pool liquidity"
+              help="Paired with newly created index shares when the V4 market opens."
+            >
+              <input
+                className={inputClass}
+                value={lpUsdc}
+                onChange={(e) => setLpUsdc(e.target.value)}
+              />
             </Field>
-            <Field label="Index address" help="Filled from 1b (IndexSeeded). Defaults to live AI2.">
-              <input className={inputClass} value={indexOverride} onChange={(e) => setIndexOverride(e.target.value)} />
+
+            <Field
+              label="New index address"
+              help="This is populated automatically after Create Index and Seed confirms."
+            >
+              <input
+                className={inputClass}
+                value={newIndexAddress ?? ''}
+                placeholder="Waiting for new index creation..."
+                readOnly
+              />
             </Field>
+
             <div className="flex flex-col justify-end gap-2">
               <p className="text-xs text-slate-500">
                 USDC approved for launcher:{' '}
-                <span className="font-mono">{allowance?.toString() ?? '—'}</span>
+                <span className="font-mono">
+                  {allowance?.toString() ?? '—'}
+                </span>
               </p>
+
+              {!newIndexAddress && (
+                <p className="text-xs text-slate-500">
+                  No index has been created in this launch session yet.
+                </p>
+              )}
             </div>
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            <button type="button" className={btnSecondary} disabled={isPending} onClick={approveUsdc}>
+            <button
+              type="button"
+              className={btnSecondary}
+              disabled={isPending}
+              onClick={approveUsdc}
+            >
               1a Approve USDC
             </button>
-            <button type="button" className={btnPrimary} disabled={isPending || !address} onClick={createSeed}>
+
+            <button
+              type="button"
+              className={btnPrimary}
+              disabled={
+                isPending ||
+                !address ||
+                !name.trim() ||
+                !symbol.trim()
+              }
+              onClick={createSeed}
+            >
               1b Create Index and Seed
             </button>
-            <button type="button" className={btnSecondary} disabled={isPending || !indexForMarket} onClick={approveShares}>
+
+            <button
+              type="button"
+              className={btnSecondary}
+              disabled={isPending || !newIndexAddress}
+              onClick={approveShares}
+            >
               2a Approve shares for LP
             </button>
-            <button type="button" className={btnPrimary} disabled={isPending || !indexForMarket} onClick={openMarket}>
+
+            <button
+              type="button"
+              className={btnPrimary}
+              disabled={isPending || !newIndexAddress}
+              onClick={openMarket}
+            >
               2b Open market
             </button>
           </div>
-          <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
 
-          {indexOverride && (
-            <div className="mt-4 rounded-lg border border-canvas-border bg-canvas/60 p-3 text-left">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Index token — add in MetaMask</p>
-              <p className="mt-1 break-all font-mono text-sm text-sky-300">{indexOverride}</p>
-              <p className="mt-2 text-xs text-slate-500">
-                MetaMask → Import tokens → Base Sepolia → paste address · decimals 18
+          <TxStatus
+            hash={hash}
+            isPending={isPending}
+            isConfirming={isConfirming}
+            isSuccess={isSuccess}
+            error={error}
+          />
+
+          {newIndexAddress && (
+            <div className="mt-5 rounded-lg border border-canvas-border bg-canvas/60 p-4 text-left">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Index created successfully
+                  </p>
+
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {name}
+                    {symbol && (
+                      <span className="ml-2 text-sm text-slate-400">
+                        ({symbol})
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+                  Created on Base Sepolia
+                </div>
+              </div>
+
+              <p className="mt-4 text-xs uppercase tracking-wide text-slate-500">
+                Index token contract
               </p>
-              <button
-                type="button"
-                className={`${btnSecondary} mt-2`}
-                onClick={() => navigator.clipboard.writeText(indexOverride)}
-              >
-                Copy address
-              </button>
+
+              <p className="mt-1 break-all font-mono text-sm text-sky-300">
+                {newIndexAddress}
+              </p>
+
+              <p className="mt-2 text-xs text-slate-500">
+                ERC-20 index share · 18 decimals
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={btnSecondary}
+                  onClick={copyIndexAddress}
+                >
+                  Copy address
+                </button>
+
+                <button
+                  type="button"
+                  className={btnPrimary}
+                  onClick={addIndexToWallet}
+                >
+                  Add {symbol || 'index'} to MetaMask
+                </button>
+
+                <a
+                  href={`https://sepolia.basescan.org/address/${newIndexAddress}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={btnSecondary}
+                >
+                  View on BaseScan
+                </a>
+              </div>
+
+              <div className="mt-4 rounded-md border border-canvas-border/70 bg-black/10 p-3">
+                <p className="text-xs text-slate-400">
+                  This newly created address will now automatically be used by
+                  <span className="font-medium text-slate-300">
+                    {' '}2a Approve shares for LP
+                  </span>
+                  {' '}and
+                  <span className="font-medium text-slate-300">
+                    {' '}2b Open market
+                  </span>
+                  .
+                </p>
+              </div>
             </div>
           )}
         </TxGate>
