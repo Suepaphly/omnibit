@@ -24,7 +24,7 @@ export default function MintPage() {
   const usdc = addresses.usdc;
   const [gross, setGross] = useState('0.01');
   const [usdcSpend, setUsdcSpend] = useState('1');
-  const [mode, setMode] = useState<'inkind' | 'zap'>('zap');
+  const [mode, setMode] = useState<'inkind' | 'zap'>('inkind');
 
   const grossSharesInKind = useMemo(() => {
     try {
@@ -42,7 +42,6 @@ export default function MintPage() {
     }
   }, [usdcSpend]);
 
-  // $1 NAV: 1 USDC (6 dp) → 1 share (18 dp)
   const zapShares = zapUsdc * 10n ** 12n;
   const grossShares = mode === 'zap' ? zapShares : grossSharesInKind;
 
@@ -74,20 +73,15 @@ export default function MintPage() {
   } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  function approveConstituents() {
-    if (!index || !constituents || !required) return;
+  function approveToken(token: `0x${string}` | undefined) {
+    if (!index || !token) return;
     reset();
-    for (let i = 0; i < constituents.length; i++) {
-      if ((required[i] ?? 0n) > 0n) {
-        writeContract({
-          address: constituents[i],
-          abi: erc20Abi,
-          functionName: 'approve',
-          args: [index, required[i]!],
-        });
-        break;
-      }
-    }
+    writeContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [index, maxUint256],
+    });
   }
 
   function mintInKind() {
@@ -136,19 +130,19 @@ export default function MintPage() {
         steps={[
           {
             title: 'Choose a path',
-            body: 'Zap: type USDC to spend. In-kind: type shares and deposit tNVDA + tMSFT you already hold.',
+            body: 'In-kind: approve tNVDA and tMSFT separately, then mint. Zap: type USDC to spend.',
           },
           {
             title: 'Preview',
-            body: 'Zap assumes $1 NAV so 1 USDC ≈ 1 share before fees and pool slippage. Extra basket dust is refunded.',
+            body: 'Shows basket required and shares after the 10 bps fee.',
           },
           {
-            title: 'Approve spending',
-            body: 'In-kind: approve each required constituent. Zap: approve USDC for the zap router.',
+            title: 'Approve',
+            body: 'Two token approvals cannot share one MetaMask popup. Confirm tNVDA, then tMSFT, then mint.',
           },
           {
             title: 'Confirm mint',
-            body: 'Submit on Base Sepolia. On zap, leftover tNVDA/tMSFT (not unused USDC) is refunded.',
+            body: 'Submit on Base Sepolia.',
           },
         ]}
       />
@@ -175,14 +169,14 @@ export default function MintPage() {
           {mode === 'inkind' ? (
             <Field
               label="Shares to mint (gross)"
-              help="Gross shares before the 10 bps mint fee. You must hold the basket amounts below."
+              help="You must hold the tNVDA and tMSFT amounts in the table."
             >
               <input className={inputClass} value={gross} onChange={(e) => setGross(e.target.value)} />
             </Field>
           ) : (
             <Field
               label="USDC to spend"
-              help="Entire amount is split across tNVDA/tMSFT buys. Preview shares assume $1 NAV."
+              help="Spent in the stock pools. Preview assumes $1 NAV; thin pools may revert."
             >
               <input className={inputClass} value={usdcSpend} onChange={(e) => setUsdcSpend(e.target.value)} />
             </Field>
@@ -190,26 +184,10 @@ export default function MintPage() {
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <Stat
-            label="You receive (preview)"
-            value={fmtUnits(userShares)}
-            help="userShares after fee from previewMint. Zap slippage can change this."
-          />
-          <Stat
-            label="Share fee"
-            value={fmtUnits(feeShares)}
-            hint="~10 bps"
-            help="Typically 10 bps of gross shares to treasury."
-          />
+          <Stat label="You receive (preview)" value={fmtUnits(userShares)} />
+          <Stat label="Share fee" value={fmtUnits(feeShares)} hint="~10 bps" />
           <Stat label="Index" value={shortAddr(index)} />
         </div>
-
-        {mode === 'zap' && (
-          <p className="mt-3 text-xs text-slate-500">
-            Spending {usdcSpend || '0'} USDC requests ~{usdcSpend || '0'} shares at $1 NAV. The router
-            spends this USDC in the stock pools; leftover tNVDA/tMSFT returns to your wallet.
-          </p>
-        )}
 
         {required && constituents && (
           <div className="mt-4 overflow-x-auto">
@@ -236,13 +214,29 @@ export default function MintPage() {
         {mode === 'inkind' ? (
           <TxGate require={['ai2']} actionLabel="in-kind mint">
             <div className="mt-5 flex flex-wrap gap-2">
-              <button type="button" className={btnSecondary} disabled={isPending} onClick={approveConstituents}>
-                Approve next basket token
+              <button
+                type="button"
+                className={btnSecondary}
+                disabled={isPending}
+                onClick={() => approveToken(addresses.tNVDA)}
+              >
+                Approve tNVDA
+              </button>
+              <button
+                type="button"
+                className={btnSecondary}
+                disabled={isPending}
+                onClick={() => approveToken(addresses.tMSFT)}
+              >
+                Approve tMSFT
               </button>
               <button type="button" className={btnPrimary} disabled={isPending || !address} onClick={mintInKind}>
                 Mint shares
               </button>
             </div>
+            <p className="mt-2 text-[11px] text-slate-500">
+              Approve tNVDA, wait for the tx, approve tMSFT, wait, then mint. Spender is the AI2 index.
+            </p>
             <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
           </TxGate>
         ) : (
