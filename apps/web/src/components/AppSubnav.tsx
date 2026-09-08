@@ -6,11 +6,11 @@ import { usePathname } from 'next/navigation';
 const links = [
   { href: '/app', label: 'Overview', exact: true },
   { href: '/app/launch', label: 'Launch' },
-  { href: '/app/vault', label: 'Vault' },
   { href: '/app/mint', label: 'Mint' },
   { href: '/app/trade', label: 'Trade' },
   { href: '/app/accretion', label: 'Accretion' },
   { href: '/app/redeem', label: 'Redeem' },
+  { href: '/app/vault', label: 'Vault' },
 ];
 
 export function AppSubnav() {

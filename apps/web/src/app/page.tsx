@@ -17,7 +17,7 @@ const features = [
   },
   {
     title: 'Accretion, not dilution',
-    desc: 'Protocol fees flow into the vault as more underlying — NAV rises for holders without minting new shares.',
+    desc: 'Protocol fees flow into the vault as more underlying — NAV grows for holders without minting new shares.',
     icon: (
       <path
         d="M4 16l4-4 3 3 5-6 4 2M4 20h16"
@@ -45,7 +45,7 @@ const features = [
   },
   {
     title: 'Transparent fees',
-    desc: 'Mint/redeem share fees, V4 LP fee, and protocol hook fee — each surfaced separately so economics stay inspectable.',
+    desc: 'Mint/redeem fees, V4 LP fee, and protocol hook fee are each surfaced separately so economics stay inspectable.',
     icon: (
       <path
         d="M12 3v18M8 7h6a2.5 2.5 0 010 5H8m0 0h7a2.5 2.5 0 010 5H8"
@@ -59,16 +59,16 @@ const features = [
 ];
 
 const steps = [
-  { n: '01', title: 'Trade on the pool', body: 'AI2 ↔ USDC on Uniswap V4. LP fee stays with LPs; hook fee accrues as pending USDC.' },
-  { n: '02', title: 'Sweep fees', body: 'sweepFees splits pendingHookUsdc between treasury and the accretion engine.' },
-  { n: '03', title: 'Harvest into basket', body: 'Engine buys constituents at launch weights and depositAccretion — zero new shares, higher NAV.' },
+  { n: '01', title: 'Trade on the pool', body: 'AI2 ↔ USDC on Uniswap V4. LP fee stays with LPs; hook fee accrues in USDC.' },
+  { n: '02', title: 'Sweep fees', body: 'sweepFees splits pendingHookUsdc between treasury and the Accretion Cauldron.' },
+  { n: '03', title: 'Harvest into basket', body: 'Cauldron buys underlying constituents and depositAccretion creates zero new shares, but increases NAV.' },
 ];
 
 const fees = [
   { label: 'Mint / redeem', value: '10 bps', hint: 'Share fee to treasury' },
   { label: 'Pool LP', value: '5 bps', hint: 'Stays with LPs (fee=500)' },
   { label: 'Protocol hook', value: '5 bps', hint: 'USDC → pendingHookUsdc' },
-  { label: 'Accretion split', value: '50 / 50', hint: 'Treasury / engine on sweep' },
+  { label: 'Accretion split', value: '50 / 50', hint: 'Treasury / Engine on sweep' },
 ];
 
 export default function HomePage() {
@@ -183,7 +183,7 @@ export default function HomePage() {
           <p className="mt-2 text-sm leading-relaxed text-slate-400">
             Equal-weight basket of synthetic tNVDA and tMSFT on Base Sepolia. Seed near $1 NAV,
             trade on a canonical INDEX/USDC V4 pool, and watch cumulativeAccretedUsdWad climb as
-            fees are harvested back into the vault.
+            fees are harvested into the vault.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <Link href="/app/vault" className="btn-secondary !text-xs">

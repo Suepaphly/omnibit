@@ -290,7 +290,7 @@ export default function VaultPage() {
 
       <Panel
         title="Uniswap V4 pools"
-        subtitle="USDC and token columns are virtual reserves from L × price. Liquidity L is the AMM invariant, not dollars. Tick = 1.0001^tick."
+        subtitle="USDC and Token reserves held in the Liquidity Pools"
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-left text-sm">

@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   useAccount,
   useWriteContract,
   useWaitForTransactionReceipt,
   useReadContract,
 } from 'wagmi';
-import { parseUnits, type Address } from 'viem';
+import { parseUnits, parseEventLogs, type Address } from 'viem';
 import { Panel, Field, inputClass, btnPrimary, btnSecondary, Stat } from '@/components/Panel';
 import { PageHeader } from '@/components/PageHeader';
 import { TxGate } from '@/components/TxGate';
@@ -23,7 +23,7 @@ export default function LaunchPage() {
   const [symbol, setSymbol] = useState('AI2');
   const [backingUsdc, setBackingUsdc] = useState('2');
   const [lpUsdc, setLpUsdc] = useState('1');
-  const [indexOverride, setIndexOverride] = useState('');
+  const [indexOverride, setIndexOverride] = useState(addresses.ai2 ?? '');
   const [showAddrs, setShowAddrs] = useState(false);
 
   const tNVDA = addresses.tNVDA;
@@ -46,7 +46,22 @@ export default function LaunchPage() {
     error,
     reset,
   } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({ hash });
+
+  useEffect(() => {
+    if (!receipt) return;
+    try {
+      const evs = parseEventLogs({
+        abi: IndexLauncherAbi,
+        logs: receipt.logs,
+        eventName: 'IndexSeeded',
+      });
+      const created = evs[0]?.args?.index as Address | undefined;
+      if (created) setIndexOverride(created);
+    } catch {
+      /* not a createSeed receipt */
+    }
+  }, [receipt]);
 
   const indexForMarket = (indexOverride || addresses.ai2 || '') as Address;
   const backing = useMemo(() => {
@@ -69,20 +84,20 @@ export default function LaunchPage() {
     return {
       name,
       symbol,
-      constituents: [tNVDA, tMSFT] as readonly [Address, Address],
-      initialWeightsBps: [5000, 5000] as const,
+      constituents: [tNVDA, tMSFT] as Address[],
+      initialWeightsBps: [5000, 5000],
       creator: address,
     };
   }, [name, symbol, tNVDA, tMSFT, address]);
 
-  function approveUsdc(amount: bigint) {
+  function approveUsdc() {
     if (!launcher) return;
     reset();
     writeContract({
       address: usdc,
       abi: erc20Abi,
       functionName: 'approve',
-      args: [launcher, amount],
+      args: [launcher, backing + lp],
     });
   }
 
@@ -97,8 +112,8 @@ export default function LaunchPage() {
         {
           name: indexParams.name,
           symbol: indexParams.symbol,
-          constituents: [...indexParams.constituents],
-          initialWeightsBps: [...indexParams.initialWeightsBps],
+          constituents: indexParams.constituents,
+          initialWeightsBps: indexParams.initialWeightsBps,
           creator: indexParams.creator,
         },
         backing,
@@ -109,20 +124,19 @@ export default function LaunchPage() {
     });
   }
 
-  function initializeMarket() {
+  function approveShares() {
     if (!launcher || !indexForMarket) return;
     reset();
-    // INDEX amount ≈ lpUSDC * 1e12 at $1 NAV
     const indexAmount = lp * 10n ** 12n;
     writeContract({
-      address: addresses.ai2 && indexForMarket === addresses.ai2 ? addresses.ai2 : indexForMarket,
+      address: indexForMarket,
       abi: erc20Abi,
       functionName: 'approve',
       args: [launcher, indexAmount],
     });
   }
 
-  function initializeMarketTx() {
+  function openMarket() {
     if (!launcher || !indexForMarket) return;
     reset();
     writeContract({
@@ -137,7 +151,7 @@ export default function LaunchPage() {
     <div className="space-y-6">
       <PageHeader
         title="Launch"
-        subtitle="Create a new index, seed its basket with USDC, then open the trading pool — two transactions on Base Sepolia."
+        subtitle="1b buys the basket and deploys the index. 2b opens the AI2/USDC pool and seeds LP."
       />
 
       <StepsGuide
@@ -145,32 +159,25 @@ export default function LaunchPage() {
         defaultOpen
         steps={[
           {
-            title: 'Connect on Base Sepolia',
-            body: 'Header wallet must be on Base Sepolia (84532).',
+            title: '1a Approve USDC',
+            body: 'Launcher can pull seed + LP USDC.',
           },
           {
-            title: 'Approve USDC for the launcher',
-            body: 'Allow the launcher to spend enough USDC for seed backing and pool liquidity.',
+            title: '1b Create Index and Seed',
+            body: 'Deploys the index token and buys tNVDA + tMSFT. The new index address fills in below from the receipt.',
           },
           {
-            title: 'Create & seed (transaction 1)',
-            body: 'Deploys the index and buys the initial basket near $1 per share.',
+            title: '2a Approve shares for LP',
+            body: 'Allow the launcher to pair those index shares with USDC.',
           },
           {
-            title: 'Paste the new index address',
-            body: 'Copy the index address from the create receipt (or set NEXT_PUBLIC_AI2_INDEX), then approve shares for LP.',
-          },
-          {
-            title: 'Open the market (transaction 2)',
-            body: 'Registers the fee hook and adds full-range liquidity on the Uniswap V4 pool.',
+            title: '2b Open market',
+            body: 'Creates the Uniswap V4 index/USDC pool with the fee hook and adds liquidity.',
           },
         ]}
       />
 
-      <Panel
-        title="Bootstrap an index"
-        subtitle="Step through the buttons below. Technical function names are in the tooltips."
-      >
+      <Panel title="Bootstrap an index" subtitle="Use 2 USDC seed and 1 USDC LP on Sepolia.">
         <button
           type="button"
           className="mb-4 text-xs font-medium text-accent-soft underline-offset-2 hover:underline"
@@ -181,8 +188,8 @@ export default function LaunchPage() {
         {showAddrs && (
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             <Stat label="Launcher" value={shortAddr(launcher)} />
-            <Stat label="tNVDA" value={shortAddr(tNVDA)} help="Test NVDA constituent token on Sepolia." />
-            <Stat label="tMSFT" value={shortAddr(tMSFT)} help="Test MSFT constituent token on Sepolia." />
+            <Stat label="tNVDA" value={shortAddr(tNVDA)} />
+            <Stat label="tMSFT" value={shortAddr(tMSFT)} />
           </div>
         )}
 
@@ -194,49 +201,42 @@ export default function LaunchPage() {
             <Field label="Symbol">
               <input className={inputClass} value={symbol} onChange={(e) => setSymbol(e.target.value)} />
             </Field>
-            <Field
-              label="USDC for basket seed"
-              help="createSeed: USDC spent to buy the initial constituent basket (6 decimals)."
-            >
+            <Field label="USDC for basket seed" help="Spent in 1b to buy tNVDA and tMSFT.">
               <input className={inputClass} value={backingUsdc} onChange={(e) => setBackingUsdc(e.target.value)} />
             </Field>
-            <Field
-              label="USDC for pool liquidity"
-              help="initializeMarket: USDC paired with index shares as full-range LP on V4."
-            >
+            <Field label="USDC for pool liquidity" help="Paired with index shares in 2b.">
               <input className={inputClass} value={lpUsdc} onChange={(e) => setLpUsdc(e.target.value)} />
             </Field>
             <Field
-              label="Index address (after create)"
-              help="Paste from the createSeed receipt, or leave blank to use NEXT_PUBLIC_AI2_INDEX."
+              label="Index address"
+              help="Filled from 1b (IndexSeeded). Defaults to the live AI2 index."
             >
               <input
                 className={inputClass}
-                placeholder={addresses.ai2 ?? '0x…'}
                 value={indexOverride}
                 onChange={(e) => setIndexOverride(e.target.value)}
               />
             </Field>
             <div className="flex flex-col justify-end gap-2">
               <p className="text-xs text-slate-500">
-                USDC already approved for launcher:{' '}
+                USDC approved for launcher:{' '}
                 <span className="font-mono">{allowance?.toString() ?? '—'}</span>
               </p>
             </div>
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            <button type="button" className={btnSecondary} disabled={isPending} onClick={() => approveUsdc(backing > lp ? backing : lp)}>
-              Approve USDC
+            <button type="button" className={btnSecondary} disabled={isPending} onClick={approveUsdc}>
+              1a Approve USDC
             </button>
             <button type="button" className={btnPrimary} disabled={isPending || !address} onClick={createSeed}>
-              1 · Create & seed
+              1b Create Index and Seed
             </button>
-            <button type="button" className={btnSecondary} disabled={isPending || !indexForMarket} onClick={initializeMarket}>
-              2a · Approve shares for LP
+            <button type="button" className={btnSecondary} disabled={isPending || !indexForMarket} onClick={approveShares}>
+              2a Approve shares for LP
             </button>
-            <button type="button" className={btnPrimary} disabled={isPending || !indexForMarket} onClick={initializeMarketTx}>
-              2b · Open market
+            <button type="button" className={btnPrimary} disabled={isPending || !indexForMarket} onClick={openMarket}>
+              2b Open market
             </button>
           </div>
           <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
