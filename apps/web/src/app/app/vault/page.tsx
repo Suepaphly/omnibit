@@ -293,7 +293,7 @@ export default function VaultPage() {
 
       <Panel
         title="Uniswap V4 pools"
-        subtitle="Pool mid is what zap/trade hit. Feed is what the vault uses. Gap = slippage / InsufficientBasketForMint."
+        subtitle="Gap = slippage / InsufficientBasketForMint."
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-left text-sm">
@@ -341,8 +341,8 @@ export default function VaultPage() {
           </table>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          currency0 is USDC on these pools. Implied USD is from sqrtPriceX96. Liquidity 0 or a huge
-          implied vs feed gap means refill with SeedConstituentPools, not redeem.
+          Implied USD is from sqrtPriceX96. Liquidity 0 or a huge
+          implied vs feed gap means refill with SeedConstituentPools.
         </p>
       </Panel>
 
