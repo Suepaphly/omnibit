@@ -98,9 +98,9 @@ export default function HomePage() {
             </span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-slate-400">
-            A Base Sepolia testnet protocol for launching accretive indexes: in-kind mint & redeem,
-            V4 trading with a protocol fee hook, and a harvest loop that compounds underlying into
-            existing shares.
+            A Base Sepolia testnet protocol for launching accretive indexes: 
+            This enables in-kind mint & redeem, V4 trading with a protocol fee hook, 
+            and a harvest loop which compounds a percentage of fees into existing shares.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link href="/app" className="btn-primary !px-6 !py-2.5">
