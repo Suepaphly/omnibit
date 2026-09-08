@@ -384,21 +384,27 @@ export default function MintPage() {
                 </table>
               </div>
             )}
-            <TxGate require={['ai2']} actionLabel="in-kind mint">
+            <TxGate require={['ai2', 'zap', 'usdc']} actionLabel="USDC zap mint">
               <div className="mt-5 flex flex-wrap gap-2">
-                <button type="button" className={btnSecondary} disabled={isPending} onClick={() => approveToken(addresses.tNVDA)}>
-                  Approve tNVDA
-                </button>
-                <button type="button" className={btnSecondary} disabled={isPending} onClick={() => approveToken(addresses.tMSFT)}>
-                  Approve tMSFT
+                <button type="button" className={btnSecondary} disabled={isPending} onClick={approveUsdcZap}>
+                  Approve USDC
                 </button>
                 <button
                   type="button"
                   className={btnPrimary}
-                  disabled={isPending || !address}
-                  onClick={() => mintInKind(grossShares)}
+                  disabled={isPending || !estimatedShares || zapUsdc === 0n}
+                  onClick={() => {
+                    if (!zap || !index || !estimatedShares) return;
+                    reset();
+                    writeContract({
+                      address: zap,
+                      abi: IndexZapRouterAbi,
+                      functionName: 'mintExactSharesWithUSDC',
+                      args: [index, estimatedShares, zapUsdc, deadlineSeconds()],
+                    });
+                  }}
                 >
-                  Mint shares
+                  Mint with USDC
                 </button>
               </div>
               <TxStatus hash={hash} isPending={isPending} isConfirming={isConfirming} isSuccess={isSuccess} error={error} />
